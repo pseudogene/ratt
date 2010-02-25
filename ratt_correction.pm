@@ -171,12 +171,12 @@ sub doit {
     }
     print $res;
 
-    open( F, "> $ResultName.Report.csv" )
+    open( F, "> $ResultName.Report.txt" )
       or die "Couldn't write the gff file...\n";
     print F $res;
     close(F);
     print
-"done.\nPlease see the file $ResultName.Report.csv for reporting the errors and the file $ResultName.Report.gff for reporting the error in Artemis or other sequence viewer.\n";
+"done.\nPlease see the file $ResultName.Report.txt for reporting the errors and the file $ResultName.Report.gff for reporting the error in Artemis or other sequence viewer.\n";
 
 }
 
@@ -1436,11 +1436,11 @@ sub getAmountFrameshifts {
 sub loadConfig {
 
     if ( defined( $ENV{RATT_PATH} )
-        && -f "$ENV{RATT_PATH}/.atact.config.txt" )
+        && -f "$ENV{RATT_PATH}/ratt.config" )
     {
-        open( F, "$ENV{RATT_PATH}/.atact.config.txt" )
+        open( F, "$ENV{RATT_PATH}/ratt.config" )
           or die
-          "Couldn't open Config file $ENV{RATT_PATH}/.atact.config.txt\n";
+          "Couldn't open Config file $ENV{RATT_PATH}/ratt.config\n";
 
         my $count = 0;
         while (<F>) {

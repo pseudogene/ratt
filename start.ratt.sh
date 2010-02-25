@@ -91,7 +91,7 @@ if [ -f "$ref" ]
 	echo
 	echo
 else
-	$RATT_HOME/main.ratt.pl Embl2Fasta $refembl Reference.fasta
+	perl $RATT_HOME/main.ratt.pl Embl2Fasta $refembl Reference.fasta
 	ref="Reference.fasta"
 fi
 	
@@ -232,22 +232,35 @@ if [ "$doneDifference" == "0" ]
 	perl $RATT_HOME/main.ratt.pl Difference  $name.snp $name.filter.coords $result
 fi
 
-## comparison done
-
+### do the tranfer
 if [ -f "$verbose" ] 
 	then
 	echo "Nucmer is done. Now transfer the annotation."
 	echo "perl $RATT_HOME/main.ratt.pl $refembl $name.snp $name.filter.coords $result"
 fi
 
-perl $RATT_HOME/main.ratt.pl $refembl $name.snp $name.filter.coords $result
+perl $RATT_HOME/main.ratt.pl Transfer $refembl $name.snp $name.filter.coords $result
+
+### do ther correction
 if [ -f "$verbose" ] 
 	then
 	echo "Nucmer is done. Now transfer the annotation."
 	echo "perl $RATT_HOME/main.ratt.pl $refembl $name.snp $name.filter.coords $result"
 fi
 
-perl $RATT_HOME/main.ratt.pl Correct $result.embl $query $result
+for name in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
+	perl $RATT_HOME/main.ratt.pl Correct $result.$name.embl $query $name
+done
 
-echo "If you want to start art:"
-echo "art $query + $result.embl + $result.final.embl &"
+
+echo "If you want to start art (assume just one replicon):"
+x=$(ls $result*final.embl);
+file=$(echo $x | sed 's/\.embl$//g';)
+echo "art $query + $x + Query/$file.Mutations.gff"
+
+### clean the files
+if [ ! -f "$verbose" ]
+	then 
+	rm $result*embl.tmp.BBA.embl
+	rm $name*
+fi

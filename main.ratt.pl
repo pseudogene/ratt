@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <25-Feb-2010 14:55:45 tdo>
+# Time-stamp: <25-Feb-2010 16:29:19 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -25,7 +25,13 @@ if (!defined($ENV{RATT_HOME})) {
   print "Please set global variable RATT_HOME in your shell!\n";
   exit 1
 }
-if ($ARGV[0] eq "Mutate") {
+
+if (!defined($ARGV[0])) {
+  print "Sorry, wrong option.\n";
+  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta\ncan be used.\n\n";
+  exit 1
+}
+elsif ($ARGV[0] eq "Mutate") {
   if (! defined($ARGV[1])) {
 	print "\n\nusage: \$RATT_HOME/main.ratt.pl Mutate <(multi-)fasta-file>\n\n".
 	  "Every 250 base pairs a base is changed (mutated). The result is saved as <fastafile>.mutated. This is necessary to recalibrate RATT for similar genomes.\n\n";
@@ -34,29 +40,29 @@ if ($ARGV[0] eq "Mutate") {
 	
   }
   putMutation($ARGV[1]);
-   
+  
   exit;
 }
 elsif ($ARGV[0] eq "Split") {
- if (! defined($ARGV[1])) {
+  if (! defined($ARGV[1])) {
 	print "\n\nusage: \$RATT_HOME/main.ratt.pl Mutate <(multifasta-file>\n\n".
 	  "Splits a given multifasta file into individual files containing one sequence. This is necessary as visualization tools (e.g. Artemis) prefer single fasta files.\n\n";
 	
 	exit (1);
 	
   }
- Split($ARGV[1]);
-   
+  Split($ARGV[1]);
+  
   exit;
 }
 elsif ($ARGV[0] eq "Difference") {
   my $mummerSNP=$ARGV[1];
   my $mummerCoords=$ARGV[2];
   my $resultName=$ARGV[3];
-
+  
   if (!defined($resultName)) {
   	print "\n\nusage: \$RATT_HOME/main.ratt.pl Difference <mummer SNP file> <mummer coord file> <ResultName>\n\n".
- "Generates files that report the SNP, indels and regions not shared by the reference and query. It also prints a statistic reporting coverage for each replicon.\n\n";
+	  "Generates files that report the SNP, indels and regions not shared by the reference and query. It also prints a statistic reporting coverage for each replicon.\n\n";
   	exit (1);
   }
   my $stats=getMutations($mummerSNP,$mummerCoords,$resultName);
@@ -80,12 +86,12 @@ elsif ($ARGV[0] eq "EMBLFormatCheck") {
   correctEMBL($embl,"tmp.BBA.embl");
 }
 elsif ($ARGV[0] eq "Correct") {
-  if (scalar(@ARGV) < 3) {
+  if (scalar(@ARGV) < 4) {
 	print "\n\nusage:  \$RATT_HOME/main.ratt.pl Correct <EMBL file> <fasta file> <ResultName>\n\n".
 	  "Corrects a given annotation, as described previously. The corrections are reported and the new file is saved as <ResultName>.embl.\n\n";	
 	exit(1); 
   }
-
+  
   my $what =shift;
   my $embl=shift;
   my $fasta = shift;
@@ -94,50 +100,74 @@ elsif ($ARGV[0] eq "Correct") {
   correctEMBL($embl,"tmp.BBA.embl");
   
   startAnnotationCorrection( "$embl.tmp.BBA.embl",$fasta,$resultName);
-   
+  
   exit;
 }
+elsif ($ARGV[0] eq "Check") {
+  if (scalar(@ARGV) < 4) {
+	print "\n\nusage:  \$RATT_HOME/main.ratt.pl Check <EMBL file> <fasta file> <ResultName>\n\n".
+	  "Similar to the correct option, but it will only report errors in an EMBL file.\n\n";
+ my $what =shift;
+  my $embl=shift;
+  my $fasta = shift;
+  my $resultName = shift;	
+	correctEMBL($embl,"tmp.BBA.embl");
+	
+	startAnnotationCheck( "$embl.tmp.BBA.embl",$fasta,$resultName);
+	exit;
+  }
+}
+elsif ($ARGV[0] eq "Embl2Fasta") {
+  if (scalar(@ARGV) < 3) {
+	print "\n\nusage:  \$RATT_HOME/main.ratt.pl Embl2Fasta <EMBL dir> <fasta file>\n\n".
+	  "Extracts the sequence from embl files in the <EMBL directory> and saves it as a <fasta file>.\n\n";
+  exit 1;
+  }
+  
+  
+  my $what =shift;
+  my $embl=shift;
+  my $fasta = shift;
+  Embl2Fasta($embl,$fasta);
+  exit;
+  
+}
+
 elsif ($ARGV[0] eq "EMBLFormatCheck") {
   if (scalar(@ARGV) < 3) {
-	print "\n\nusage:  \$RATT_HOME/main.ratt.pl EMBLFormatCheck <EMBL file> <ResultName postfix>
-
-Some EMBL files have feature positions spanning several lines, this function consolidates these features so they appear on one line. The result name is <EMBL File>.<ResultName postfix>.\n\n";
+	print "\n\nusage:  \$RATT_HOME/main.ratt.pl EMBLFormatCheck <EMBL file> <ResultName postfix>\n\n".
+	  "Some EMBL files have feature positions spanning several lines, this function consolidates these features so they appear on one line. The result name is <EMBL File>.<ResultName postfix>.\n\n";
 	
-	exit(1); 
+ 	exit(1); 
   }
-
+  
   my $what =shift;
   my $embl=shift;
-  my $fasta = shift;
-  my $resultName = shift;
+  my $postfix = shift;
   
-  correctEMBL($embl,"tmp.BBA.embl");
-  
-  startAnnotationCorrection( "$embl.tmp.BBA.embl",$fasta,$resultName);
+  correctEMBL($embl,$postfix);
    
   exit;
 }
-elsif ($ARGV[0] eq "Checkannotation") {
-  Split($ARGV[1]);
-   
-  exit;
-}
-if (@ARGV< 4) {
-  print "Please use: program <EMBL file with annotation to transfer> <Mummer SNP> <mummer coords> <Annotation result > <SNP reslut> <clusterfile> <size > <offset>\n";
+elsif ($ARGV[0] eq "Transfer") {
   
-  die "1. EMBL file with the annotation. This can also be a gff file, but color wouldn't be changed so far\n".
-	"2. Mummer (promer or nucmer) SNP file, like numcer.RESULSTNAME.snp. Contains the SNP and indels between the Bigbrother and the new sequence.\n".
-	  "3.";
+  if (@ARGV< 5) {
+ 	print "\n\nusage:  \$RATT_HOME/main.ratt.pl Transfer <embl Directory> <mummer SNP file> <mummer coord file> <ResultName>\n\n".
+	  "This functionality uses the mummer output to map the annotation from embl files, which are in the <embl Directory>, to the query. It generates all the new annotation files (ResultName.replicon.embl), as well as files describing which annotations remain untransferred (Replicon_reference.NOTtransfered.embl).\n\n";
+	
+	
+ 	exit(1);
+  }
   
-}
-
-my $emblDir     = shift;
-my $mummerSNP   = shift;
-my $mummerCoords= shift;
-my $resultName  = shift;
-
-my $dbg=100;
-
+  
+  my $what         = shift;
+  my $emblDir     = shift;
+  my $mummerSNP   = shift;
+  my $mummerCoords= shift;
+  my $resultName  = shift;
+  
+  my $dbg=100;
+  
 
 ## main hash: %ref_shift{Ref_contig}[pos] [0] query_contig
 #										  [1] position
@@ -194,7 +224,11 @@ print "$$ref_Counting{Partial}\tmodels could be transfered partially.\n";
 ### then just save it
 saveAnnotation($resultName,$ref_results);
 
-
+}
+else {
+  print "Sorry, wrong option.\n";
+  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta\ncan be used.\n\n";
+}
 
 
 
@@ -579,21 +613,23 @@ sub saveAnnotation{
 
   ### map the mapping Stuff
   foreach my $query (sort keys %{$$ref_h[0]}){
-  open (F,"> $name.$query.embl") or die "Couldn't open save file $name: $!\n";
-
-  # UTR must be saved
-  $$ref_h[0]{$query} =~ s/3TUTR/3\'UTR/g;
-  $$ref_h[0]{$query} =~ s/5TUTR/5\'UTR/g;
-  print F $$ref_h[0]{$query};
-  close(F);
+	my $nameQry=$query;
+	$nameQry =~ s/\|/_/g;
+	open (F,"> $name.$nameQry.embl") or die "Couldn't open save file $name: $!\n";
+	
+	# UTR must be saved
+	$$ref_h[0]{$query} =~ s/3TUTR/3\'UTR/g;
+	$$ref_h[0]{$query} =~ s/5TUTR/5\'UTR/g;
+	print F $$ref_h[0]{$query};
+	close(F);
   }
   
   # UTR must be saved
   foreach my $ref (sort keys %{$$ref_h[1]}){
-	my $name=$ref;
-	$name =~ s/\|/_/g;
+	my $nameRef=$ref;
+	$nameRef =~ s/\|/_/g;
 	
- 	open (F,"> $name.$name.NOTTransfered.embl") or die "Couldn't open save file $name: $!\n";
+ 	open (F,"> $name.$nameRef.NOTTransfered.embl") or die "Couldn't open save file $name: $!\n";
 	
 	$$ref_h[1]{$ref} =~ s/3TUTR/3\'UTR/g;
 	$$ref_h[1]{$ref} =~ s/5TUTR/5\'UTR/g;
@@ -945,16 +981,16 @@ sub getMutations{
 	  $noCovQry{$chr}+=($sizeQuery{$chr}-1-$start);
 	}
   }
-  saveGFF($resultName,"BB",\%BB);
-  saveGFF($resultName,"LB",\%LB);
+  saveGFF($resultName,"Reference",\%BB);
+  saveGFF($resultName,"Query",\%LB);
 
   my $res;
   
   foreach my $chr (sort keys %sizeRef ) {
-	$res.=sprintf("Of the reference chromosome $chr %.2f  has no synteny with the query\n",(( $sizeRef{$chr} - $coveredRef{$chr})*100/$sizeRef{$chr}) );
+	$res.=sprintf("Of the reference chromosome $chr\t%.2f per cent\thas no synteny with the query\n",(( $sizeRef{$chr} - $coveredRef{$chr})*100/$sizeRef{$chr}) );
   }
   foreach my $chr (sort keys %sizeQuery ) {
-	$res.=sprintf("Of the reference chromosome $chr %.2f  has no synteny with the reference\n",((( $sizeQuery{$chr}-$coveredQuery{$chr} ))*100/$sizeQuery{$chr}) );
+	$res.=sprintf("Of the query chromosome $chr\t %.2f per cent\thas no synteny with the reference\n",((( $sizeQuery{$chr}-$coveredQuery{$chr} ))*100/$sizeQuery{$chr}) );
   }
   return $res
 }
@@ -997,4 +1033,46 @@ sub Split{
   return \@NameFiles;
 }
 
+###########################################
+### Seperate Replicon
+############################################
 
+sub Embl2Fasta{
+  my $emblDir = shift;
+  my $fastaResult = shift;
+
+  
+  opendir (DIR, $emblDir) or die "Problem to open opendir $emblDir: $!\n";
+  
+  ### will hold the new annotation: $h{queryname}.=annotation as embl
+
+  my $fasta;
+  
+  map {
+	if (/embl$/){
+	  open F, "$emblDir/$_ " or die "Problem open $emblDir/$_ in Embl2Fasta:$! \n";
+	  my ($name)=$_ =~ /^(\S+)\.embl/;
+	  
+	  while (<F>) {
+		if (/^SQ/) {
+		  $fasta.=">$name\n";
+		  while (<F>) {
+			if (/\/\//) {
+			  last;
+			}
+			## get away space and number of seq
+			s/\d+//g;
+			s/\s+//g;
+			$fasta.=$_;
+						
+		  }
+		}
+	  }
+	  
+	}
+  } readdir(DIR);
+  open F, "> $fastaResult" or die "Couldn't write file $fastaResult in Embl2Fasta: $!\n";
+  print F $fasta;
+  close(F);
+  
+}
