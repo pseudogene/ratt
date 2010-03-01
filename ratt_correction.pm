@@ -1435,13 +1435,16 @@ sub getAmountFrameshifts {
 ####################
 sub loadConfig {
 
-    if ( defined( $ENV{RATT_PATH} )
-        && -f "$ENV{RATT_PATH}/ratt.config" )
+    if ( defined( $ENV{RATT_CONFIG} )
+        && -f "$ENV{RATT_CONFIG}" )
     {
-        open( F, "$ENV{RATT_PATH}/ratt.config" )
+        open( F, "$ENV{RATT_CONFIG}" )
           or die
-          "Couldn't open Config file $ENV{RATT_PATH}/ratt.config\n";
+          "Couldn't open Config file $ENV{RATT_CONFIG}\n";
 
+		print "Using the $ENV{RATT_CONFIG} file for specifications.\n";
+		
+		
         my $count = 0;
         while (<F>) {
             chomp;
@@ -1468,6 +1471,10 @@ sub loadConfig {
             }
         }
     }
+	else {
+	  print "Using the default specifications for start/codons and splice sites.\n";
+
+	}
 }
 
 ####################

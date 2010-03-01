@@ -44,7 +44,7 @@ if [ -z "$parameterSet" ]; then
 
 ### nucmer call as function
 function doNucmer {
-	if [ -f "$verbose" ] 
+	if [ ! -z "$verbose" ] 
 		then 
 		echo "nucmer  $other_nucmer -g $g -p $name -c $c -l $l $ref $query"
 		echo "delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta"
@@ -233,7 +233,7 @@ if [ "$doneDifference" == "0" ]
 fi
 
 ### do the tranfer
-if [ -f "$verbose" ] 
+if [ ! -z "$verbose" ] 
 	then
 	echo "Nucmer is done. Now transfer the annotation."
 	echo "perl $RATT_HOME/main.ratt.pl $refembl $name.snp $name.filter.coords $result"
@@ -242,24 +242,23 @@ fi
 perl $RATT_HOME/main.ratt.pl Transfer $refembl $name.snp $name.filter.coords $result
 
 ### do ther correction
-if [ -f "$verbose" ] 
-	then
-	echo "Nucmer is done. Now transfer the annotation."
-	echo "perl $RATT_HOME/main.ratt.pl $refembl $name.snp $name.filter.coords $result"
-fi
-
-for name in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
-	perl $RATT_HOME/main.ratt.pl Correct $result.$name.embl $query $name
+for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
+	echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
+	echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
+	if [ ! -z "$verbose" ] 
+		then
+		echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
+		echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
+	fi
+	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes
 done
 
 
 echo "If you want to start art (assume just one replicon):"
-x=$(ls $result*final.embl);
-file=$(echo $x | sed 's/\.embl$//g';)
-echo "art $query + $x + Query/$file.Mutations.gff"
+echo "art $query + $nameRes.final.embl + Query/$result.$nameRes.Mutations.gff"
 
 ### clean the files
-if [ ! -f "$verbose" ]
+if [  -z "$verbose" ]
 	then 
 	rm $result*embl.tmp.BBA.embl
 	rm $name*

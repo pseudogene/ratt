@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <25-Feb-2010 16:29:19 tdo>
+# Time-stamp: <26-Feb-2010 16:03:11 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -352,7 +352,7 @@ sub adaptAnnotationEMBL{
 		 {
 		   $$ref_Counting{"Split"}++;
 		   
-		   print "$chr  position $posA $posE \n $$ref_shift{$chr}[$posA][0]  // ($$ref_shift{$chr}[$posE][0] \n";
+#		   print "$chr  position $posA $posE \n $$ref_shift{$chr}[$posA][0]  // ($$ref_shift{$chr}[$posE][0] \n";
 		   
 		 }  
 	  elsif (defined($$ref_shift{$chr}[$posA][0]) ||
@@ -650,7 +650,10 @@ sub saveGFF{
   }
 
   foreach my $chr (sort keys %$ref_h){
-	open (F,"> $path/$name.$chr.Mutations.gff") or die "Couldn't create file $name: $!\n";
+	my $chrName=$chr;
+	$chrName =~ s/\|/_/g;
+	
+	open (F,"> $path/$name.$chrName.Mutations.gff") or die "Couldn't create file $name: $!\n";
 
   # UTR must be saved
   print F $$ref_h{$chr};
