@@ -45,6 +45,7 @@ my %STOP_CODON = (
     'TAG' => 1,
     'TAA' => 1
 );
+my $CORRECT_SPLICESITE=0;
 my %START_CODON     = ( 'ATG' => 1 );
 my %SPLICE_DONOR    = ( 'GT'  => 1 );
 my %SPLICE_ACCEPTOR = ( 'AG'  => 1 );
@@ -287,6 +288,7 @@ sub correctModel {
 		
 		my ( $amount, $lastPos ) =
 		  amountWrongspliceDonors( $ref_structure, $sequence );
+		  
 		if ($amount) {
 		  debug( 1, "Splice donor wrong" );
 		  
@@ -296,6 +298,15 @@ sub correctModel {
 				   $isComplement, length($sequence) );
 		  $$ref_stats{$id}{splicesites} = $amount;
 		  $$ref_stats{$id}{error}++;
+		}
+		
+		### try to correct one splice site.
+		if ($amount ==1 && $CORRECT_SPLICESITE){
+			my $result = correctSplicesite(
+																 $ref_structure,         $sequence,
+																 \%{ $$ref_stats{$id} }, \$GFFfile
+																);
+			
 		}
 		
 		
@@ -1355,22 +1366,193 @@ sub isStopOK {
     }
     return 0;
 }
+
+
+sub findSpliceSiteDonor{
+	my $ref_structure = shift;
+	my $sequence      = shift;
+	my $newPos        = shift;
+	my $stepSize      = shift;
+	my $exonNumber    = shift;
+	my $exonStart     = shift;
+	my $maxStep       = shift;
+	
+	my $MIN_SIZE=10;
+	my ($posNextExon) = $$ref_structure{pos}[($exonNumber)] =~ /^(\d+)/;
+	
+	### change the model dowanstream
+  if ($posNextExon> ($newPos + $MIN_SIZE ) &&
+  	defined( $SPLICE_DONOR{ uc( substr( $sequence, $newPos, 2 ) ) } )){
+  	### possible splice site found
+  	#update structure
+  	$$ref_structure{pos}[($exonNumber-1)] = "$exonStart..$newPos";
+  	# check of zero stop codons
+	my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+	my $amount = getAmountFrameshifts($cds);
+	if ($amount==0){
+		return ($newPos,$ref_structure);
+	}
+  }
+  elsif(($exonStart < ($newPos-$stepSize-$MIN_SIZE)) && defined( $SPLICE_DONOR{ uc( substr( $sequence, ($newPos-$stepSize), 2 ) ) } ))
+  {
+  		### possible splice site found
+  	#update structure
+  	$$ref_structure{pos}[($exonNumber-1)] = "$exonStart..".($newPos-$stepSize);
+  	# check of zero stop codons
+	my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+	my $amount = getAmountFrameshifts($cds);
+	if ($amount==0){
+		return (($newPos-$stepSize),$ref_structure);
+	}
+  }
+	my $ok;
+  if (($stepSize <= $maxStep) && 
+  ($posNextExon > ($newPos + $MIN_SIZE) || ($exonStart < ($newPos-$stepSize-$MIN_SIZE)))){
+  		($ok, $ref_structure)=findSpliceSiteDonor($ref_structure,$sequence,($newPos+1),($stepSize+2),$exonNumber,$exonStart,$maxStep); 
+	 }	
+	 else {
+	 	return (0,$ref_structure)
+	 }
+	 return ($ok,$ref_structure);
+}
+
+
+sub findSpliceSiteAcceptor{
+	my $ref_structure = shift;
+	my $sequence      = shift;
+	my $newPos        = shift;
+	my $stepSize      = shift;
+	my $exonNumber    = shift;
+	my $exonEnd       = shift;
+	my $maxStep       = shift;
+	
+	my $MIN_SIZE=10;
+	my ($posNextExon) = $$ref_structure{pos}[($exonNumber-2)] =~ /^(\d+)/;
+	
+	### change the model dowanstream
+  if ($exonEnd > ($newPos + $MIN_SIZE ) &&
+  	defined( $SPLICE_ACCEPTOR{ uc( substr( $sequence, ($newPos-3), 2 ) ) } )){
+  	### possible splice site found
+
+  	#update structure
+  	$$ref_structure{pos}[($exonNumber-1)] = "$newPos..$exonEnd";
+  	# check of zero stop codons
+	my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+	my $amount = getAmountFrameshifts($cds);
+	if ($amount==0){
+		return ($newPos,$ref_structure);
+	}
+  }
+  elsif(($posNextExon < ($newPos-$stepSize-$MIN_SIZE)) && defined( $SPLICE_ACCEPTOR{ uc( substr( $sequence, ($newPos-$stepSize-3), 2 ) ) } ))
+  {
+  		### possible splice site found
+  	#update structure
+  	$$ref_structure{pos}[($exonNumber-1)] = ($newPos-$stepSize)."..$exonEnd";
+  	# check of zero stop codons
+	my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+	my $amount = getAmountFrameshifts($cds);
+	if ($amount==0){
+		return (($newPos-$stepSize),$ref_structure);
+	}
+  }
+my $ok;
+  if (($stepSize <= $maxStep) && 
+  ($exonEnd > ($newPos + $MIN_SIZE ) || ($posNextExon < ($newPos-$stepSize-$MIN_SIZE)))){
+  		($ok, $ref_structure)=findSpliceSiteAcceptor($ref_structure,$sequence,($newPos+1),($stepSize+2),$exonNumber,$exonEnd,$maxStep); 
+	 }	
+	 else {
+#	 	print "Nothing found $stepSize <= $maxStep  $posNextExon > ($newPos + $MIN_SIZE)     ($exonStart < ($newPos-$stepSize-$MIN_SIZE)\n";
+	 	return (0,$ref_structure)
+	 }
+	 return ($ok,$ref_structure);
+}
+
+####################
+### correctSplicesite
+####################
+sub correctSplicesite {
+    my $ref_structure = shift;
+    my $sequence      = shift;
+    my $ref_statsGene = shift;
+    my $ref_GFF       = shift;
+
+    my $count     = 1;
+    my $wrong     = 0;
+    my $lastwrong = 0;
+
+	
+    foreach ( @{ $$ref_structure{pos} } ) {
+        if ( $count != scalar(@{ $$ref_structure{pos} } )) {
+            /(\d+)$/;
+            # splice_donor is wrong GT
+            if ( !defined( $SPLICE_DONOR{ uc( substr( $sequence, $1, 2 ) ) } ) )
+            {
+            	my $old=$_;
+				 /(\d+)\.\.(\d+)$/;
+
+            	### look on the downstream site for splice site
+	            my ($ok, $ref_structure)=findSpliceSiteDonor($ref_structure,$sequence,$2,1,$count,$1,200); 
+				if ($ok != 0){
+					  $$ref_statsGene{'CorrectionLog'} .= " // Correct Splice Site (Donor)";
+
+				$$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.");
+
+				}
+				else {
+				$$ref_structure{pos}[($count-1)	]=$old;
+				}
+            }
+        }
+        if ( $count != 1 ) {
+            /^(\d+)/;
+            if (
+                !defined(
+                    $SPLICE_ACCEPTOR{ uc( substr( $sequence, ( $1 - 3 ), 2 ) ) }
+                )
+              )
+            {
+            	my $old=$_;
+				 /(\d+)\.\.(\d+)$/;
+
+            	### look on the downstream site for splice site
+	            my ($ok, $ref_structure)=findSpliceSiteAcceptor($ref_structure,$sequence,$1,1,$count,$2,200); 
+				if ($ok != 0){
+					  $$ref_statsGene{'CorrectionLog'} .= " // Correct Splice Site (Acceptor)";
+
+				$$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.");
+
+				}
+				else {
+		   			$$ref_structure{pos}[($count-1)	]=$old;
+				}
+		    }
+        }
+        $count++;
+    }
+
+    return ( $wrong, $lastwrong );
+}
+
 ####################
 ### amountWrongspliceDonors
 ####################
 sub amountWrongspliceDonors {
     my $ref_structure = shift;
     my $sequence      = shift;
+	my $ref_stats     = shift;
+	my $refGFF        = shift;
 
+    # we know it is one wrong
     my $count     = 1;
     my $wrong     = 0;
     my $lastwrong = 0;
 
     foreach ( @{ $$ref_structure{pos} } ) {
-        if ( $count != $$ref_structure{exons} ) {
+        if ( $count != scalar(@{ $$ref_structure{pos} } )) {
             /(\d+)$/;
             if ( !defined( $SPLICE_DONOR{ uc( substr( $sequence, $1, 2 ) ) } ) )
             {
+            	
                 $wrong++;
                 $lastwrong = $1;
 
@@ -1393,6 +1575,8 @@ sub amountWrongspliceDonors {
 
     return ( $wrong, $lastwrong );
 }
+
+
 
 ####################
 ### isMod3Length
@@ -1457,6 +1641,9 @@ sub loadConfig {
             elsif (/#SPLICE/) {
                 $count = 3;
             }
+            elsif (/#CORRECTSPLICESITE/){
+            	$count = 4
+            }
             elsif ( $count == 1 ) {
                 $START_CODON{$_} = 1;
             }
@@ -1469,6 +1656,11 @@ sub loadConfig {
                 $SPLICE_DONOR{$_}    = 1;
                 $SPLICE_ACCEPTOR{$_} = 1;
             }
+            elsif ( $count == 4 ) {
+            	chomp;
+            	$CORRECT_SPLICESITE = $_ 	
+            }
+            
         }
     }
 	else {
