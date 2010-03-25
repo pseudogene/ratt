@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <24-Mar-2010 17:05:43 tdo>
+# Time-stamp: <25-Mar-2010 12:50:17 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -313,6 +313,7 @@ sub adaptAnnotationEMBL{
   my $transfer=0;
   
   while (<F>) {
+	
 	# UTR must be saved
 	s/3\'UTR/3TUTR/g;
 	s/5\'UTR/5TUTR/g;
@@ -320,21 +321,30 @@ sub adaptAnnotationEMBL{
 	  s/<//g;
 	  s/>//g;
 	}
+
+	my $line=$_;
+	# check if entry is over more than one line
+	while ($line =~ /^FT   \S+\s{2,}.*\d+,$/) {
+	  $_=<F>;
+	  chomp($line);
+	  	  
+	  /^FT   \s{2,}(.*)$/;
+	  $line.=$1;
+	}
 	
-	if (/^FT   \S+\s{2,}\D+(\d+)\..*\.(\d+)/ ||
-		/^FT   \S+\s{2,}\D+\d+,(\d+)\..*\.(\d+)/ ||
-		/^FT   \S+\s{2,}\D+(\d+)/
+	if ($line =~ /^FT   \S+\s{2,}\D+(\d+)\..*\.(\d+)/ ||
+		$line =~ /^FT   \S+\s{2,}\D+\d+,(\d+)\..*\.(\d+)/ ||
+		$line =~ /^FT   \S+\s{2,}\D+(\d+)/
 	   ) {
 	  ### This is necessary to not mapped things, which are not covered
-
-
+	  
 	  my $posA=$1;
 	  my $posE=$2;
 	  if (!defined($posE)){
 	  	$posE=$posA	
 	  }
 		chomp;
-	  ($ref_results,$queryTarget,$ref_Counting,$transfer)=doTransfer($ref_shift,$ref_results,$chr,$posA,$_,$ref_Counting);
+	  ($ref_results,$queryTarget,$ref_Counting,$transfer)=doTransfer($ref_shift,$ref_results,$chr,$posA,$line,$ref_Counting);
 
 	  $$ref_Counting{Elements}++;
 	  ### case 1, all ok
