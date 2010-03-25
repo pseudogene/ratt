@@ -303,11 +303,11 @@ sub correctModel {
 		### try to correct one splice site.
 		if ($amount ==1 && $CORRECT_SPLICESITE){
 			my $result = correctSplicesite(
-																 $ref_structure,         $sequence,
-																 \%{ $$ref_stats{$id} }, \$GFFfile
-																);
+										   $ref_structure,         $sequence,
+										   \%{ $$ref_stats{$id} }, \$GFFfile, $isComplement 
+										  );
 			
-		}
+		  }
 		
 		
 		##update the cds
@@ -1475,12 +1475,12 @@ sub correctSplicesite {
     my $sequence      = shift;
     my $ref_statsGene = shift;
     my $ref_GFF       = shift;
-
+	my $isComplement  = shift;
+	
     my $count     = 1;
     my $wrong     = 0;
     my $lastwrong = 0;
 
-	
     foreach ( @{ $$ref_structure{pos} } ) {
         if ( $count != scalar(@{ $$ref_structure{pos} } )) {
             /(\d+)$/;
@@ -1495,9 +1495,9 @@ sub correctSplicesite {
 				if ($ok != 0){
 					  $$ref_statsGene{'CorrectionLog'} .= " // Correct Splice Site (Donor)";
 
-				$$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.");
-
-				}
+					  $$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.",$isComplement, length($sequence) );
+					  
+					}
 				else {
 				$$ref_structure{pos}[($count-1)	]=$old;
 				}
@@ -1519,7 +1519,7 @@ sub correctSplicesite {
 				if ($ok != 0){
 					  $$ref_statsGene{'CorrectionLog'} .= " // Correct Splice Site (Acceptor)";
 
-				$$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.");
+				$$ref_GFF.=doGFF($ok,"SpliceSiteCorrect","Splice site correct.",$isComplement, length($sequence));
 
 				}
 				else {

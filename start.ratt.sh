@@ -41,15 +41,19 @@ if [ -z "$parameterSet" ]; then
    exit
  fi
 
-
+if [ ! -z "$RATT_VERBOSE" ]
+	then
+	verbose=1;
+else
+	verbose=0;
+fi
 ### nucmer call as function
 function doNucmer {
-	if [ ! -z "$verbose" ] 
-		then 
+#	if [ "$verbose" == 1 ] 
+#		then 
 		echo "nucmer  $other_nucmer -g $g -p $name -c $c -l $l $ref $query"
 		echo "delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta"
-	fi
-
+#	fi
 	nucmer $other_nucmer -g $g -p $name -c $c -l $l $ref $query &> /dev/null
 	delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta
 	show-snps -CHTr $name.filter.delta > $name.snp
@@ -197,10 +201,9 @@ elif [ "$parameterSet" == "Species" ]  || [ "$parameterSet" == "Species.Repetiti
 	c=400;
 	l=10;
 	g=500;
-    other_nucmer="--maxmatch -o 1"
-	rearrange="-q";
+ 
+	rearrange="-q  -o 1";
 	minInd=40;
-
 elif [ "$parameterSet" == "Multiple" ] ;
 	then 
 	c=400;
@@ -241,7 +244,17 @@ fi
 
 perl $RATT_HOME/main.ratt.pl Transfer $refembl $name.snp $name.filter.coords $result
 
+
 ### do ther correction
+# first the fasta
+mkdir Sequences
+tmp=$$
+ln -s $query tmpSeqXXX.$tmp
+cd Sequences
+perl $RATT_HOME/main.ratt.pl Split ../tmpSeqXXX.$tmp
+cd ..
+rm tmpSeqXXX.$tmp
+
 for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
 	echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
 	echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
@@ -250,7 +263,7 @@ for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
 		echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
 		echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
 	fi
-	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes
+	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $nameRes
 done
 
 

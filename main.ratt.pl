@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <26-Feb-2010 16:03:11 tdo>
+# Time-stamp: <24-Mar-2010 17:05:43 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -45,7 +45,7 @@ elsif ($ARGV[0] eq "Mutate") {
 }
 elsif ($ARGV[0] eq "Split") {
   if (! defined($ARGV[1])) {
-	print "\n\nusage: \$RATT_HOME/main.ratt.pl Mutate <(multifasta-file>\n\n".
+	print "\n\nusage: \$RATT_HOME/main.ratt.pl Split <(multifasta-file>\n\n".
 	  "Splits a given multifasta file into individual files containing one sequence. This is necessary as visualization tools (e.g. Artemis) prefer single fasta files.\n\n";
 	
 	exit (1);
@@ -1061,12 +1061,13 @@ sub Embl2Fasta{
 		  $fasta.=">$name\n";
 		  while (<F>) {
 			if (/\/\//) {
+			  
 			  last;
 			}
 			## get away space and number of seq
 			s/\d+//g;
 			s/\s+//g;
-			$fasta.=$_;
+			$fasta.=$_."\n";
 						
 		  }
 		}
