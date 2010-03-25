@@ -1194,7 +1194,7 @@ sub doGFF {
             "unknown\tBBA\t$tag\t"
           . ( $length - $pos + 1 ) . "\t"
           . ( $length - $pos + 1 )
-          . "\t0\t+\t.\tnote=\"$str\"\n";
+          . "\t0\t-\t.\tnote=\"$str\"\n";
     }
     else {
         return "unknown\tBBA\t$tag\t$pos\t$pos\t0\t+\t.\tnote=\"$str\"\n";
