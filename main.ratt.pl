@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <25-Mar-2010 12:50:17 tdo>
+# Time-stamp: <25-Mar-2010 15:52:22 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -199,7 +199,12 @@ my $ref_Counting= {'Partial'         => 0,
 				   'ExonNotTransfered' => 0,
 				   'Split'         => 0,
 				   'NotTransfered' => 0,
-				   'Transfered'    => 0};
+				   'Transfered'    => 0,
+				   'CDS' => 0,
+				   'CDSTransfered' => 0,
+				   'CDSNotExons'   => 0,
+				   'CDSPartial'   => 0
+				  };
 
 map {
 	if (/embl$/){
@@ -211,17 +216,24 @@ map {
 
 
 
-
-### output results
-print "$$ref_Counting{Elements}\telements found.\n";
-print "$$ref_Counting{NotTransfered}\tmodels couldn't be transfered.\n";
-print "$$ref_Counting{Split}\tmodels splitted.\n";
-print "$$ref_Counting{ExonNotTransfered}\texons not transfered.\n";
-
-print "\n$$ref_Counting{Transfered}\tmodels were transfered.\n";
-print "$$ref_Counting{Partial}\tmodels could be transfered partially.\n";
-
-### then just save it
+  
+  ### output results
+  print "Overview of transfere of annotation elements:\n$$ref_Counting{Elements}\telements found.\n";
+  print "$$ref_Counting{Transfered}\tElements were transfered.\n";
+  print "$$ref_Counting{Partial}\tElements could be transfered partially.\n";
+  print "$$ref_Counting{Split}\tElements splitted.\n";
+  print "$$ref_Counting{ExonNotTransfered}\tParts of elements (i.e.exons tRNA) not transferred.\n";
+  print "$$ref_Counting{NotTransfered}\tElements couldn't be transferred.\n";
+  
+  print "\nCDS:\n$$ref_Counting{CDS}\tGene models to transfer.\n$$ref_Counting{CDSTransfered}\tGene models transferred correctly.\n";
+  print "$$ref_Counting{CDSPartial}\tGene models partially transferred.\n";
+  print "$$ref_Counting{CDSNotExons}\tExons not transferred from partial CDS matches.\n";
+  print ($$ref_Counting{CDS}-$$ref_Counting{CDSTransfered}-$$ref_Counting{CDSPartial});
+  print "\tGene models not transferred.\n\n";
+  
+  
+  
+  ### then just save it
 saveAnnotation($resultName,$ref_results);
 
 }
@@ -331,21 +343,28 @@ sub adaptAnnotationEMBL{
 	  /^FT   \s{2,}(.*)$/;
 	  $line.=$1;
 	}
+
 	
 	if ($line =~ /^FT   \S+\s{2,}\D+(\d+)\..*\.(\d+)/ ||
 		$line =~ /^FT   \S+\s{2,}\D+\d+,(\d+)\..*\.(\d+)/ ||
 		$line =~ /^FT   \S+\s{2,}\D+(\d+)/
 	   ) {
 	  ### This is necessary to not mapped things, which are not covered
-	  
+
 	  my $posA=$1;
 	  my $posE=$2;
 	  if (!defined($posE)){
 	  	$posE=$posA	
 	  }
-		chomp;
+	  ### check if CDS
+	  if ($line =~ /FT   CDS/) {
+		$$ref_Counting{CDS}++
+	  }
+	  
+	  
+		  chomp;
 	  ($ref_results,$queryTarget,$ref_Counting,$transfer)=doTransfer($ref_shift,$ref_results,$chr,$posA,$line,$ref_Counting);
-
+	  
 	  $$ref_Counting{Elements}++;
 	  ### case 1, all ok
 	  if (defined($$ref_shift{$chr}[$posA][0]) &&
@@ -439,7 +458,7 @@ sub doTransfer{
 	  if (! ($ar[$i] =~ /\.\./) ) {
 		$ar[$i] =~ /(\d+)/;
 		my $pos=$1;
-		print " single exon $ar[$i] pos is $pos \n";
+#		print " single exon $ar[$i] pos is $pos \n";
 #		print Dumper $$ref_shift{$chr};
 		
 		if (defined($$ref_shift{$chr}[$pos][0])) {
@@ -518,14 +537,27 @@ sub doTransfer{
 	if ($mappedOnce ==0) {
 	  $$ref_Counting{NotTransfered}++
 	}
-	if (($mappedOnce > 0 && $exonMissed >0)||
-	   $partialCount>0){
-	$$ref_Counting{Partial}++;
-	### This means, put the annotation to the BB and LB, as it is partial
-	$transfer=3;
+	if (($mappedOnce > 0 && $exonMissed >0)
+#		||
+#		$partialCount>0
+	   ){
+	  $$ref_Counting{Partial}++;
+	  ### This means, put the annotation to the BB and LB, as it is partial
+	  if ($line =~ /FT   CDS/) {
+		$$ref_Counting{CDSPartial}++;
+		$$ref_Counting{CDSNotExons}+=$exonMissed;
+	  }
+	  $transfer=3;
 	}
+
+
+	
 	if ($exonMissed==0) {
 	  $$ref_Counting{Transfered}++;
+	  if ($line =~ /FT   CDS/) {
+		$$ref_Counting{CDSTransfered}++;
+	  }
+	  
 	  ### Modell fully mapped, put it just to the LB
 	  $transfer=1;
 	}

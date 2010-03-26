@@ -318,56 +318,36 @@ sub correctModel {
 		  
 		}	
 		if ( ( my $amount = getAmountFrameshifts($cds) ) ) {
-		  
-		  #	  $GFFfile.=doGFF($$ref_structure{start},"Frameshift","The model has $amount frameshifts",$isComplement,length($sequence));
+
 		  $$ref_stats{$id}{frameshifts} = $amount;
 		  $$ref_stats{$id}{error}++;
 		  my ($ok) = 0;
 		  $ref_structure =
 			checkFrameShits( $ref_structure, \%{ $$ref_stats{$id} },
 							 $sequence );
-			  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-			  my $amount2 = getAmountFrameshifts($cds);
 
-			  if ( $amount2 == 0 ) {
-				$GFFfile .= doGFF(
-								  $$ref_structure{start},
-								  "FrameshiftCorrected",
-								  ( $amount - $amount2 ) . " frameshifts corrected.",
-								  $isComplement,
-								  length($sequence)
-								 );
-			  }
-			  elsif ( $amount2 < $amount ) {
-				$GFFfile .= doGFF(
-								  $$ref_structure{start},
-								  "Frameshifts",
-								  ( $amount - $amount2 )
-								  . " frameshifts corrected. But still $amount2 exists",
-								  $isComplement,
-								  length($sequence)
-								 );
-				$$ref_stats{$id}{frameshiftsStill} = $amount2;
-			  }
-			  else {
-				$GFFfile .= doGFF(
-								  $$ref_structure{start},              "Frameshift",
-								  "The model has $amount frameshifts", $isComplement,
-								  length($sequence)
-								 );
-				$$ref_stats{$id}{frameshiftsStill} = $amount2;
-			  }
-			  
-			  
-            }
-
+		  ### check if model still have framesfhits
+		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		  my $amount2 = getAmountFrameshifts($cds);
+		  
+		  if ( $amount2 == 0 ) {
+			$GFFfile .= doGFF(
+							  $$ref_structure{start},
+							  "FrameshiftCorrected",
+							  ( $amount - $amount2 ) . " frameshifts corrected.",
+							  $isComplement,
+							  length($sequence)
+							 );
+		  }
+		}
+		
 		if ($DEBUG > 500) {
 		  print Dumper  \@{ $$ref_structure{pos} };
 		  
 		}
-			
-			$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-			debug(10,"Check Length");
+		
+		$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		debug(10,"Check Length");
 			
             if ( !isMod3Length($cds) ) {
 			  $GFFfile .= doGFF(
@@ -421,24 +401,38 @@ sub correctModel {
                 ### check if still stop
                 $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
                 if ( !isStopOK($cds) ) {
-                    $$ref_stats{$id}{StopStillBad} = 1;
-                    $$ref_stats{$id}{errorStill}++;
-                    $GFFfile .= doGFF(
-                        $$ref_structure{end}, "BadStop",
-                        "Stop wrong",         $isComplement,
-                        length($sequence)
-                    );
+				  $$ref_stats{$id}{StopStillBad} = 1;
+				  $$ref_stats{$id}{errorStill}++;
+				  $GFFfile .= doGFF(
+									$$ref_structure{end}, "BadStop",
+									"Stop wrong",         $isComplement,
+									length($sequence)
+								   );
                 }
                 else {
-                    $$ref_stats{$id}{CorrectionLog} .= " // Corrected Stop";
-                    $GFFfile .= doGFF(
-                        $$ref_structure{end}, "CorrectStop",
-                        "Corrected Stop",     $isComplement,
-                        length($sequence)
-                    );
+				  $$ref_stats{$id}{CorrectionLog} .= " // Corrected Stop";
+				  $GFFfile .= doGFF(
+									$$ref_structure{end}, "CorrectStop",
+									"Corrected Stop",     $isComplement,
+									length($sequence)
+								   );
                 }
-            }
 
+				### check if model still have framesfhits
+				$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+				my $amount2 = getAmountFrameshifts($cds);
+
+				if ( $amount2 > 0 ) {
+				  $GFFfile .= doGFF(
+									$$ref_structure{start},              "Frameshift",
+									"The model has $amount frameshifts", $isComplement,
+									length($sequence)
+								   );
+				  $$ref_stats{$id}{frameshiftsStill} = $amount2;
+				}
+				
+			  }
+		
             if ($isComplement) {
                   my $tmp = printStructurePos($ref_structure);
                 $tmp =~ /^(FT   \S+\s+)(\S+)$/;
