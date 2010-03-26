@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <25-Mar-2010 15:52:22 tdo>
+# Time-stamp: <26-Mar-2010 12:48:48 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -221,7 +221,7 @@ map {
   print "Overview of transfere of annotation elements:\n$$ref_Counting{Elements}\telements found.\n";
   print "$$ref_Counting{Transfered}\tElements were transfered.\n";
   print "$$ref_Counting{Partial}\tElements could be transfered partially.\n";
-  print "$$ref_Counting{Split}\tElements splitted.\n";
+  print "$$ref_Counting{Split}\tElements split.\n";
   print "$$ref_Counting{ExonNotTransfered}\tParts of elements (i.e.exons tRNA) not transferred.\n";
   print "$$ref_Counting{NotTransfered}\tElements couldn't be transferred.\n";
   

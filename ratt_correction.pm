@@ -688,7 +688,7 @@ sub correctStart {
         }
         else {
             $$ref_statsGene{'CorrectionLog'} .=
-              " // No unique shift for model found... MANUEL check";
+              " // No unique shift for model found... MANUAL check";
 
         }
     }
@@ -994,7 +994,7 @@ sub min {
 sub correctModelShift {
     my ( $ref_structure, $shift, $ref_statsGene, $ref_GFF ) = @_;
     if ( ( $shift % 3 ) > 0 ) {
-        $$ref_statsGene{'CorrectionLog'} .= " // Modell shifted $shift bases";
+        $$ref_statsGene{'CorrectionLog'} .= " // Modell shifted $shift base(s)";
 
 #		$$ref_GFF.=doGFF($$ref_structure{start},"Modell_Shifted","Modell shifted $shift bases");
     }
