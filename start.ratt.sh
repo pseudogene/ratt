@@ -41,6 +41,8 @@ if [ -z "$parameterSet" ]; then
    exit
  fi
 
+
+orig_query=$query
 if [ ! -z "$RATT_VERBOSE" ]
 	then
 	verbose=1;
@@ -135,7 +137,7 @@ if [ "$parameterSet" == "Assembly" ] || [ "$parameterSet" == "Assembly.Repetitiv
 	else
 		other_nucmer="  "
 	fi
-	rearrange=" -r -o 10 ";
+	rearrange=" -1 -o 1 ";
 	minInd=99;
 	
 	### get real SNP before mutate
@@ -249,7 +251,7 @@ perl $RATT_HOME/main.ratt.pl Transfer $refembl $name.snp $name.filter.coords $re
 # first the fasta
 mkdir Sequences
 tmp=$$
-ln -s $query tmpSeqXXX.$tmp
+ln -s $orig_query tmpSeqXXX.$tmp
 cd Sequences
 perl $RATT_HOME/main.ratt.pl Split ../tmpSeqXXX.$tmp
 cd ..

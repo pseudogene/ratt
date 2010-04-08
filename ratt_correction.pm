@@ -46,6 +46,8 @@ my %STOP_CODON = (
     'TAA' => 1
 );
 my $CORRECT_SPLICESITE=0;
+my $CORRECT_PSEUDO=1;
+
 my %START_CODON     = ( 'ATG' => 1 );
 my %SPLICE_DONOR    = ( 'GT'  => 1 );
 my %SPLICE_ACCEPTOR = ( 'AG'  => 1 );
@@ -155,11 +157,13 @@ sub doit {
     #	print Dumper $$ref_revStats{$gene}
     #  }
 
-    open( F, "> $ResultName.final.embl" )
-      or die "Couldn't write the gff file...\n";
-    print F $newEMBL;
-    close(F);
-
+	if ( $method eq "Correct" ) {
+	  open( F, "> $ResultName.final.embl" )
+		or die "Couldn't write the gff file...\n";
+	  print F $newEMBL;
+	  close(F);
+	}
+	
     # write results:
     open( F, "> $ResultName.Report.gff" )
       or die "Couldn't write the gff file...\n";
@@ -207,253 +211,258 @@ sub correctModel {
     foreach (@EMBL) {
 	  chomp;
 	  if (/^FT   CDS\s{2,}(\S+)$/) {
-		
-		my $line = $1;
-		if (/complement/) {
-		  $isComplement = 1;
-		  $sequence     = $revSequence;
-		  $line = reverseCDS( $line, length($sequence) );
-		}
-		my $ref_structure = getStructure($line);
-		my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-		my ( $id, $product ) = getID( \@EMBL, $pos );
-		if ( !defined($id) ) {
-		  $id = $$ref_structure{start};
-		}
-		
-		$$ref_stats{$id}{product} = $product;
-		
-		debug(1,"\nWorking on $id ".$$ref_structure{pos}[0]);
-		
-		
-					if ($DEBUG > 500) {
-		  print Dumper  \@{ $$ref_structure{pos} };
+		my $isPseudo=checkPseudo(\@EMBL,$pos);
+		if (!($isPseudo) ||
+			($CORRECT_PSEUDO)) {
 		  
-		}	
-		if ( !isStartOK($cds) ) {
-		  debug(50,"Start is wrong");
-		  #		  $GFFfile.=doGFF($$ref_structure{start},"BadStart","Start wrong",$isComplement,length($sequence));
-		  $$ref_stats{$id}{StartBad} = 1;
-		  $$ref_stats{$id}{error}++;
-		  $ref_structure = correctStart(
-										$ref_structure,         $sequence,
-										\%{ $$ref_stats{$id} }, \$GFFfile
-									   );
-		  my $ok = 0;
-		  
-		  if ($DEBUG>50) {
-			print Dumper @{$$ref_structure{pos}}
+		  my $line = $1;
+		  if (/complement/) {
+			$isComplement = 1;
+			$sequence     = $revSequence;
+			$line = reverseCDS( $line, length($sequence) );
+		  }
+		  my $ref_structure = getStructure($line);
+		  my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		  my ( $id, $product ) = getID( \@EMBL, $pos );
+		  if ( !defined($id) ) {
+			$id = $$ref_structure{start};
 		  }
 		  
-		  ( $ref_structure, $ok ) = extentModelUpstreamStart(
-															 $ref_structure,         $sequence,
-															 \%{ $$ref_stats{$id} }, \$GFFfile
-																);
-		  if ($DEBUG>50) {
-			print Dumper @{$$ref_structure{pos}}
-		  }
-		  if ( !$ok ) {
-			( $ref_structure, $ok ) = extentModelDownstreamStart(
-																 $ref_structure,         $sequence,
-																 \%{ $$ref_stats{$id} }, \$GFFfile
-																);
+		  $$ref_stats{$id}{product} = $product;
+		  
+		  debug(1,"\nWorking on $id ".$$ref_structure{pos}[0]);
+		  
+		  
+		  if ($DEBUG > 500) {
+			print Dumper  \@{ $$ref_structure{pos} };
+			
+		  }	
+		  if ( !isStartOK($cds) ) {
+			debug(50,"Start is wrong");
+			#		  $GFFfile.=doGFF($$ref_structure{start},"BadStart","Start wrong",$isComplement,length($sequence));
+			$$ref_stats{$id}{StartBad} = 1;
+			$$ref_stats{$id}{error}++;
+			$ref_structure = correctStart(
+										  $ref_structure,         $sequence,
+										  \%{ $$ref_stats{$id} }, \$GFFfile
+										 );
+			my $ok = 0;
+			
+			if ($DEBUG>50) {
+			  print Dumper @{$$ref_structure{pos}}
+			}
+			
+			( $ref_structure, $ok ) = extentModelUpstreamStart(
+															   $ref_structure,         $sequence,
+															   \%{ $$ref_stats{$id} }, \$GFFfile
+															  );
+			if ($DEBUG>50) {
+			  print Dumper @{$$ref_structure{pos}}
+			}
+			if ( !$ok ) {
+			  ( $ref_structure, $ok ) = extentModelDownstreamStart(
+																   $ref_structure,         $sequence,
+																   \%{ $$ref_stats{$id} }, \$GFFfile
+																  );
+			}
+			
+			if ( !$ok ) {
+			  $GFFfile .=
+				doGFF( $$ref_structure{start}, "BadStart", "Start wrong",
+					   $isComplement, length($sequence) );
+			  $$ref_stats{$id}{StartStillBad} = 1;
+			  $$ref_stats{$id}{errorStill}++;
+			}
+			if ($ok) {
+			  $$ref_stats{$id}{CorrectionLog} .= " // Corrected Start";
+			  $GFFfile .= doGFF(
+								$$ref_structure{start}, "CorrectStart",
+								"Corrected Start",      $isComplement,
+								length($sequence)
+							   );
+			}
+			
+			if ($DEBUG>50) {
+			  print Dumper @{$$ref_structure{pos}}
+			}
 		  }
 		  
-		  if ( !$ok ) {
+		  
+		  ### check to undo old frameshifts
+		  $ref_structure =
+			checkIntrons( $ref_structure, $sequence, \%{ $$ref_stats{$id} },
+						  \$GFFfile, $isComplement );
+		  
+		  my ( $amount, $lastPos ) =
+			amountWrongspliceDonors( $ref_structure, $sequence );
+		  
+		  if ($amount) {
+			debug( 1, "Splice donor wrong" );
+			
 			$GFFfile .=
-			  doGFF( $$ref_structure{start}, "BadStart", "Start wrong",
+			  doGFF( $lastPos, "Wrong_Splice",
+					 "Model has $amount wrong splice sites.",
 					 $isComplement, length($sequence) );
-			$$ref_stats{$id}{StartStillBad} = 1;
-			$$ref_stats{$id}{errorStill}++;
-		  }
-		  if ($ok) {
-			$$ref_stats{$id}{CorrectionLog} .= " // Corrected Start";
-			$GFFfile .= doGFF(
-							  $$ref_structure{start}, "CorrectStart",
-							  "Corrected Start",      $isComplement,
-							  length($sequence)
-							 );
+			$$ref_stats{$id}{splicesites} = $amount;
+			$$ref_stats{$id}{error}++;
 		  }
 		  
-		  if ($DEBUG>50) {
-			print Dumper @{$$ref_structure{pos}}
-		  }
-		}
-		
-		
-		### check to undo old frameshifts
-		$ref_structure =
-		  checkIntrons( $ref_structure, $sequence, \%{ $$ref_stats{$id} },
-						\$GFFfile, $isComplement );
-		
-		my ( $amount, $lastPos ) =
-		  amountWrongspliceDonors( $ref_structure, $sequence );
-		  
-		if ($amount) {
-		  debug( 1, "Splice donor wrong" );
-		  
-		  $GFFfile .=
-			doGFF( $lastPos, "Wrong_Splice",
-				   "Model has $amount wrong splice sites.",
-				   $isComplement, length($sequence) );
-		  $$ref_stats{$id}{splicesites} = $amount;
-		  $$ref_stats{$id}{error}++;
-		}
-		
-		### try to correct one splice site.
-		if ($amount ==1 && $CORRECT_SPLICESITE){
+		  ### try to correct one splice site.
+		  if ($amount ==1 && $CORRECT_SPLICESITE){
 			my $result = correctSplicesite(
 										   $ref_structure,         $sequence,
 										   \%{ $$ref_stats{$id} }, \$GFFfile, $isComplement 
 										  );
 			
 		  }
-		
-		
-		##update the cds
-		$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-		debug(10,"Check Frame shifts");
-			if ($DEBUG > 500) {
-		  print Dumper  \@{ $$ref_structure{pos} };
 		  
-		}	
-		if ( ( my $amount = getAmountFrameshifts($cds) ) ) {
-
-		  $$ref_stats{$id}{frameshifts} = $amount;
-		  $$ref_stats{$id}{error}++;
-		  my ($ok) = 0;
-		  $ref_structure =
-			checkFrameShits( $ref_structure, \%{ $$ref_stats{$id} },
-							 $sequence );
-
-		  ### check if model still have framesfhits
+		  
+		  ##update the cds
 		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-		  my $amount2 = getAmountFrameshifts($cds);
-		  
-		  if ( $amount2 == 0 ) {
-			$GFFfile .= doGFF(
-							  $$ref_structure{start},
-							  "FrameshiftCorrected",
-							  ( $amount - $amount2 ) . " frameshifts corrected.",
-							  $isComplement,
-							  length($sequence)
-							 );
-		  }
-		}
-		
-		if ($DEBUG > 500) {
-		  print Dumper  \@{ $$ref_structure{pos} };
-		  
-		}
-		
-		$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-		debug(10,"Check Length");
+		  debug(10,"Check Frame shifts");
+		  if ($DEBUG > 500) {
+			print Dumper  \@{ $$ref_structure{pos} };
 			
-            if ( !isMod3Length($cds) ) {
+		  }	
+		  if ( ( my $amount = getAmountFrameshifts($cds) ) ) {
+			
+			$$ref_stats{$id}{frameshifts} = $amount;
+			$$ref_stats{$id}{error}++;
+			my ($ok) = 0;
+			$ref_structure =
+			  checkFrameShits( $ref_structure, \%{ $$ref_stats{$id} },
+							   $sequence );
+			
+			### check if model still have framesfhits
+			$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+			my $amount2 = getAmountFrameshifts($cds);
+			
+			if ( $amount2 == 0 ) {
 			  $GFFfile .= doGFF(
-								$$ref_structure{start},  "Error",
-								"Model length is wrong - shiftet it to correct length", $isComplement,
+								$$ref_structure{start},
+								"FrameshiftCorrected",
+								( $amount - $amount2 ) . " frameshifts corrected.",
+								$isComplement,
 								length($sequence)
 							   );
-			  $$ref_stats{$id}{length} = 1;
-			  $$ref_stats{$id}{error}++;
-			  my $count_=0;
-			  
-			  while (! isMod3Length($cds) && $count_ <6 ){
-				$count_++;
-				$ref_structure=shiftStructureLast($ref_structure,1);
-				$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );	
-			  }
-			  
-            }
+			}
+		  }
+		  
+		  if ($DEBUG > 500) {
+			print Dumper  \@{ $$ref_structure{pos} };
 			
-			debug(10,"Check Stop");
+		  }
+		  
+		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		  debug(10,"Check Length");
+		  
+		  if ( !isMod3Length($cds) ) {
+			$GFFfile .= doGFF(
+							  $$ref_structure{start},  "Error",
+							  "Model length is wrong - shiftet it to correct length", $isComplement,
+							  length($sequence)
+							 );
+			$$ref_stats{$id}{length} = 1;
+			$$ref_stats{$id}{error}++;
+			my $count_=0;
 			
+			while (! isMod3Length($cds) && $count_ <6 ){
+			  $count_++;
+			  $ref_structure=shiftStructureLast($ref_structure,1);
+			  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );	
+			}
 			
-           $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-
-
-			my $amountFrame = getAmountFrameshifts($cds);
+		  }
+		  
+		  debug(10,"Check Stop");
+		  
+		  
+		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		  
+		  
+		  my $amountFrame = getAmountFrameshifts($cds);
+		  
+		  if ( !isStopOK($cds) || ($amountFrame > 0 && $amountFrame < 5)) {
+			### two case, no stop codon, so look at the end.
+			### more than one, find an earlier stop...
+			debug( 50, "Stop is wrong" );
 			
-            if ( !isStopOK($cds) || ($amountFrame > 0 && $amountFrame < 5)) {
-                ### two case, no stop codon, so look at the end.
-                ### more than one, find an earlier stop...
-                debug( 50, "Stop is wrong" );
-
-                $$ref_stats{$id}{StopBad} = 1;
-                $$ref_stats{$id}{error}++;
-                $cds=getLastExon($ref_structure,$sequence);
-                my $amount = getAmountFrameshifts($cds);
-                my $ok     = 0;
-                if ( $amount == 0 ) {
-                    ( $ref_structure, $ok ) = extentModelDownstreamStop(
-                        $ref_structure,         $sequence,
-                        \%{ $$ref_stats{$id} }, \$GFFfile
-                    );
-                }
-                else {
-				  
-                    ( $ref_structure, $ok ) = extentModelUpstreamStop(
-                        $ref_structure,         $sequence,
-                        \%{ $$ref_stats{$id} }, \$GFFfile
-                    );
-                }
-                ### check if still stop
-                $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-                if ( !isStopOK($cds) ) {
-				  $$ref_stats{$id}{StopStillBad} = 1;
-				  $$ref_stats{$id}{errorStill}++;
-				  $GFFfile .= doGFF(
-									$$ref_structure{end}, "BadStop",
-									"Stop wrong",         $isComplement,
-									length($sequence)
-								   );
-                }
-                else {
-				  $$ref_stats{$id}{CorrectionLog} .= " // Corrected Stop";
-				  $GFFfile .= doGFF(
-									$$ref_structure{end}, "CorrectStop",
-									"Corrected Stop",     $isComplement,
-									length($sequence)
-								   );
-                }
-
-				### check if model still have framesfhits
-				$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-				my $amount2 = getAmountFrameshifts($cds);
-
-				if ( $amount2 > 0 ) {
-				  $GFFfile .= doGFF(
-									$$ref_structure{start},              "Frameshift",
-									"The model has $amount frameshifts", $isComplement,
-									length($sequence)
-								   );
-				  $$ref_stats{$id}{frameshiftsStill} = $amount2;
-				}
-				
-			  }
+			$$ref_stats{$id}{StopBad} = 1;
+			$$ref_stats{$id}{error}++;
 		
-            if ($isComplement) {
-                  my $tmp = printStructurePos($ref_structure);
-                $tmp =~ /^(FT   \S+\s+)(\S+)$/;
-                my $CDS = reverseCDS( $2, length($sequence) );
-                $res .= $1 . $CDS . "\n";
-                $sequence     = $originalSequence;
-                $isComplement = 0;
-            }
-            else {
-                $res .= printStructurePos($ref_structure) . "\n";
-            }
-
-        }    # enf if
-        else {
-            $res .= $_ . "\n";
-        }    # else if CDS
-        $pos++;
+			my $ok     = 0;
+			debug(99,"OK $ok amount $amount");
+			
+			if ( $amount == 0 ) {
+			  ( $ref_structure, $ok ) = extentModelDownstreamStop(
+																  $ref_structure,         $sequence,
+																  \%{ $$ref_stats{$id} }, \$GFFfile
+																 );
+			}
+			else {
+			  
+			  ( $ref_structure, $ok ) = extentModelUpstreamStop(
+																$ref_structure,         $sequence,
+																\%{ $$ref_stats{$id} }, \$GFFfile
+															   );
+			}
+			### check if still stop
+			$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+			if ( !isStopOK($cds) ) {
+			  $$ref_stats{$id}{StopStillBad} = 1;
+			  $$ref_stats{$id}{errorStill}++;
+			  $GFFfile .= doGFF(
+								$$ref_structure{end}, "BadStop",
+								"Stop wrong",         $isComplement,
+								length($sequence)
+							   );
+			}
+			else {
+			  $$ref_stats{$id}{CorrectionLog} .= " // Corrected Stop";
+			  $GFFfile .= doGFF(
+								$$ref_structure{end}, "CorrectStop",
+								"Corrected Stop",     $isComplement,
+								length($sequence)
+							   );
+			}
+			
+			### check if model still have framesfhits
+			$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+			my $amount2 = getAmountFrameshifts($cds);
+			
+			if ( $amount2 > 0 ) {
+			  $GFFfile .= doGFF(
+								$$ref_structure{start},              "Frameshift",
+								"The model has $amount frameshifts", $isComplement,
+								length($sequence)
+							   );
+			  $$ref_stats{$id}{frameshiftsStill} = $amount2;
+			}
+			
+		  }
+		  
+		  if ($isComplement) {
+			my $tmp = printStructurePos($ref_structure);
+			$tmp =~ /^(FT   \S+\s+)(\S+)$/;
+			my $CDS = reverseCDS( $2, length($sequence) );
+			$res .= $1 . $CDS . "\n";
+			$sequence     = $originalSequence;
+			$isComplement = 0;
+		  }
+		  else {
+			$res .= printStructurePos($ref_structure) . "\n";
+		  }
+		} ### is pseudo
+		
+	  }    # enf if
+	  else {
+		$res .= $_ . "\n";
+	  }    # else if CDS
+	  $pos++;
     }    # foreach
     return ( $ref_annotation, $ref_stats, $GFFfile, $res );
-
-}
+	
+  }
 
 ####################
 ### checkIntrons
@@ -1113,7 +1122,12 @@ sub checkEMBL {
     foreach (@EMBL) {
         chomp;
         if (/^FT   CDS\s{2,}(\S+)$/) {
+		  my $isPseudo=checkPseudo(\@EMBL,$pos);
+		  if (!($isPseudo) ||
+			  ($CORRECT_PSEUDO)) {
 
+			
+			
             my $line = $1;
 
             if ( !/complement/ ) {
@@ -1164,9 +1178,11 @@ sub checkEMBL {
                 }
             }
 
+		  } # end pseudo
+		  
         }
         $pos++;
-    }
+    } # end oreach
     return ( $ref_annotation, $ref_stats, $GFFfile );
 
 }
@@ -1638,7 +1654,10 @@ sub loadConfig {
             elsif (/#CORRECTSPLICESITE/){
             	$count = 4
             }
-            elsif ( $count == 1 ) {
+			elsif (/#CORRECTPSEUDOGENE/){
+            	$count = 5
+            }
+			elsif ( $count == 1 ) {
                 $START_CODON{$_} = 1;
             }
             elsif ( $count == 2 ) {
@@ -1654,7 +1673,10 @@ sub loadConfig {
             	chomp;
             	$CORRECT_SPLICESITE = $_ 	
             }
-            
+              elsif ( $count == 5 ) {
+            	chomp;
+            	$CORRECT_PSEUDO = $_	
+            }
         }
     }
 	else {
@@ -1839,4 +1861,25 @@ sub debug {
 
     }
 
+}
+
+sub checkPseudo{
+  my $ref_embl = shift;
+  my $pos  = shift;
+
+  my $pseudo=0;
+  $pos++;
+  
+  while (defined($$ref_embl[$pos]) &&
+		!( $$ref_embl[$pos] =~ /^FT   \S+/)
+		 && !( $$ref_embl[$pos] =~ /^SQ/)
+		) {
+	
+	if ($$ref_embl[$pos] =~ /FT\s+\/pseudo/) {
+	  $pseudo=1;
+	  return $pseudo
+	}
+	$pos++
+  }
+  return $pseudo
 }

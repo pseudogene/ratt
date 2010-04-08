@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <26-Mar-2010 12:48:48 tdo>
+# Time-stamp: <06-Apr-2010 15:58:43 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -107,15 +107,18 @@ elsif ($ARGV[0] eq "Check") {
   if (scalar(@ARGV) < 4) {
 	print "\n\nusage:  \$RATT_HOME/main.ratt.pl Check <EMBL file> <fasta file> <ResultName>\n\n".
 	  "Similar to the correct option, but it will only report errors in an EMBL file.\n\n";
- my $what =shift;
+	exit ;
+	
+  }
+  
+  my $what =shift;
   my $embl=shift;
   my $fasta = shift;
   my $resultName = shift;	
-	correctEMBL($embl,"tmp.BBA.embl");
-	
-	startAnnotationCheck( "$embl.tmp.BBA.embl",$fasta,$resultName);
-	exit;
-  }
+  correctEMBL($embl,"tmp.BBA.embl");
+  
+  startAnnotationCheck( "$embl.tmp.BBA.embl",$fasta,$resultName);
+  exit;
 }
 elsif ($ARGV[0] eq "Embl2Fasta") {
   if (scalar(@ARGV) < 3) {
@@ -260,11 +263,23 @@ sub loadEmbl{
 my $ref_annotation;
 
 map {
-	if (/embl$/){
+	if (/embl$/ or /embl.gz$/){
 		my $embl=$_;
- 		open(F, $emblDir."/".$embl) or die "Problems open embl $embl: $!\n";
- 
-		my ($chr) = $embl =~ /\/{0,1}(\S+)\.embl$/;
+
+		my ($chr);
+		
+		if (/embl.gz$/) {
+		  open(F, " gunzip -c $emblDir."/".$embl | " ) or die "Problems open embl $embl: $!\n";
+		  ($chr) = $embl =~ /\/{0,1}(\S+)\.embl.gz$/;
+		  
+		}
+		else
+		  {
+			open(F, $emblDir."/".$embl) or die "Problems open embl $embl: $!\n";
+			($chr) = $embl =~ /\/{0,1}(\S+)\.embl$/;
+		  }
+		
+		
 		while (<F>){
  			if (/^FT.*CDS.*\d+/){
  				if ($_ =~ /^\W*\(*(\d+)\.\.(\d+)\)*$/) {
