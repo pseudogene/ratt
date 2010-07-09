@@ -7,6 +7,14 @@ result=$3
 parameterSet=$4
 ref=$5
 
+if [ -z "$RATT_HOME" ]; then
+ echo "Please set the RATT_HOME variable."
+ echo "At Sanger for bash it is RATT_HOME=/nfs/users/nfs_t/tdo/Bin/ratt; export RATT_HOME"
+ echo "At Sanger for tcsh setenv RATT_HOME /nfs/users/nfs_t/tdo/Bin/"
+exit;
+fi;
+
+
 ## check the entrance
 if [ -z "$parameterSet" ]; then 
 	echo "Please use RATT with the following options:
@@ -38,9 +46,10 @@ if [ -z "$parameterSet" ]; then
                            ATTGCGTACG
                            ..."
 
+	echo " or, for runs after iCORN:
+$RATT_HOME/start.ratt.sh ICORN <Directory with embl-files> <Query -used for iCORN> <pretag annotation > <iteration>" 
    exit
  fi
-
 
 orig_query=$query
 if [ ! -z "$RATT_VERBOSE" ]
@@ -62,6 +71,53 @@ function doNucmer {
 	show-coords -clHT $name.delta > $name.coords
 	show-coords -clHT $name.filter.delta > $name.filter.coords
 }
+
+function doiCORN {
+
+
+
+	cd "$root$(($iteration-1))"
+	
+
+	# geneate the plot
+	mkdir plot
+	echo "Producing the coverage plots in $root$iteration"
+#	awk '{ if ($1 ~ "^cons") {print $4 > "plot/"x"."$2".plot"}}' x=Iter.$iteration <(gunzip -c *pileup.gz)
+	cd ..
+	mkdir -p RATT.$iteration/Seq
+	cd RATT.$iteration/Seq
+
+	perl $RATT_HOME/main.ratt.pl Split ../../$root.$iteration
+	
+	cd ..
+	ln -s ../$root$(($iteration-1))/plot
+
+	tmp=$$;
+	ln -s ../$embl_DIR embl.$tmp
+
+	mkdir tmp
+	for x in `grep '>' ../$root.$iteration | sed 's/>//g' | awk '{ print $1 }'` ; do
+		cat ../$root.*.$x.gff > ../All.$x.gff;
+		egrep "\"INS|\"DEL"  ../All.$x.gff | sort -n -k 4 > tmp/All.indel.$x.gff; 
+		echo "perl $RATT_HOME/ratt.icorn.pl embl.$tmp/$pre_embl$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000"
+		perl $RATT_HOME/ratt.icorn.pl  embl.$tmp/$pre_embl$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000 > out;
+echo "perl ~/Bin/icorn.flagNonCorrectedRegions.pl Seq/$x plot/Iter.$iteration.$x.plot $x 20 100 Not+Corrected"
+		perl ~/Bin/icorn.flagNonCorrectedRegions.pl Seq/$x plot/Iter.$iteration.$x.plot $x 20 100 Not+Corrected;
+		
+	done;
+
+
+}
+
+if [ "$refembl" == "iCORN" ] ; then 
+	embl_DIR=$2;
+	root=$3
+	iteration=$5
+	pre_embl=$4
+	doiCORN;
+	echo done;
+	exit;
+fi
 
 ### check path of nucmer and the perl transferprogram
 NUCMER_EXE=${NUCMER_EXE-`which nucmer 2>/dev/null`}
@@ -97,8 +153,9 @@ if [ -f "$ref" ]
 	echo
 	echo
 else
-	perl $RATT_HOME/main.ratt.pl Embl2Fasta $refembl Reference.fasta
-	ref="Reference.fasta"
+	tmp=$$;
+	ref="Reference.$tmp.fasta"
+	perl $RATT_HOME/main.ratt.pl Embl2Fasta $refembl $ref
 fi
 	
 ### check if files ok
@@ -129,7 +186,7 @@ if [ "$parameterSet" == "Assembly" ] || [ "$parameterSet" == "Assembly.Repetitiv
 	then 
 	c=400;
 	l=30;
-	g=1000;
+	g=500;
 	
 	if [ "$parameterSet" == "Assembly.Repetitive" ] ;
 		then
@@ -137,7 +194,7 @@ if [ "$parameterSet" == "Assembly" ] || [ "$parameterSet" == "Assembly.Repetitiv
 	else
 		other_nucmer="  "
 	fi
-	rearrange=" -1 -o 1 ";
+	rearrange=" -g -o 1 ";
 	minInd=99;
 	
 	### get real SNP before mutate
@@ -170,7 +227,7 @@ elif [ "$parameterSet" == "Strain" ] ||  [ "$parameterSet" == "Strain.Repetitive
 		other_nucmer="  "
 	fi
 	
-	rearrange=" -r -o 10 ";
+	rearrange=" -g -o 1 ";
 	minInd=95;
 	
 	### get real SNP before mutate
@@ -190,6 +247,38 @@ elif [ "$parameterSet" == "Strain" ] ||  [ "$parameterSet" == "Strain.Repetitive
 	### update name of query
 	query=$query."mutated"
 
+elif [ "$parameterSet" == "Strain.global" ] ||  [ "$parameterSet" == "Strain.global.Repetitive" ] ;
+	then 
+	c=400;
+	l=20;
+	g=500;
+
+	if [ "$parameterSet" == "Strain.Repetitive" ] ;
+		then
+		other_nucmer=" --maxmatch "
+	else
+		other_nucmer="  "
+	fi
+	
+	rearrange=" -g ";
+	minInd=95;
+	
+	### get real SNP before mutate
+	doNucmer
+
+	perl $RATT_HOME/main.ratt.pl Difference  $name.snp $name.filter.coords $result
+	doneDifference=1;
+
+	### insert of mutation to have better anchors
+	perl $RATT_HOME/main.ratt.pl Mutate $query
+	return=$?
+	if [ "$return" != "0" ] ;
+		then 
+		echo "See Error in BBA.main script, to mutate the query for Assembly to Assembly annotation transfer."
+		exit 1;
+	fi;
+	### update name of query
+	query=$query."mutated"
 
 elif [ "$parameterSet" == "Species" ]  || [ "$parameterSet" == "Species.Repetitive" ] ;
 	then 
@@ -204,7 +293,22 @@ elif [ "$parameterSet" == "Species" ]  || [ "$parameterSet" == "Species.Repetiti
 	l=10;
 	g=500;
  
-	rearrange="-q  -o 1";
+	rearrange="-g  -o 1";
+	minInd=40;
+elif [ "$parameterSet" == "Species.global" ]  || [ "$parameterSet" == "Species.global.Repetitive" ] ;
+	then 
+	if [ "$parameterSet" == "Species.global.Repetitive" ] ;
+		then
+		other_nucmer=" --maxmatch "
+	else
+		other_nucmer="  "
+	fi
+
+	c=400;
+	l=10;
+	g=500;
+ 
+	rearrange=" -g -o 1 ";
 	minInd=40;
 elif [ "$parameterSet" == "Multiple" ] ;
 	then 
@@ -257,20 +361,27 @@ perl $RATT_HOME/main.ratt.pl Split ../tmpSeqXXX.$tmp
 cd ..
 rm tmpSeqXXX.$tmp
 
-for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
 	echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
-	echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
-	if [ ! -z "$verbose" ] 
-		then
-		echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
+
+
+for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
+	if [ -f "$result.$nameRes.embl" ] 
+		
 		echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
+		if [ ! -z "$verbose" ] 
+			then
+			echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
+			echo "perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $result.$nameRes"
+		fi
+		then
+		perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $result.$nameRes
+		echo "If you want to start art (assume just one replicon):"
+		echo "art  Sequences/$nameRes + $nameRes.final.embl + Query/$result.$nameRes.Mutations.gff"
+
 	fi
-	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $nameRes
 done
 
 
-echo "If you want to start art (assume just one replicon):"
-echo "art $query + $nameRes.final.embl + Query/$result.$nameRes.Mutations.gff"
 
 ### clean the files
 if [  -z "$verbose" ]

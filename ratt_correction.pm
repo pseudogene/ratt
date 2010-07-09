@@ -407,6 +407,8 @@ sub correctModel {
 															   );
 			}
 			### check if still stop
+			  
+			  debug(99,"OK $ok amount $amount");
 			$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
 			if ( !isStopOK($cds) ) {
 			  $$ref_stats{$id}{StopStillBad} = 1;
@@ -804,12 +806,15 @@ sub extentModelUpstreamStop {
     my ( $ref_structure, $sequence, $ref_statsGene, $refGFF ) = @_;
 
     my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+
+	debug(99,"In extentModelUpstreamStop...");
 	
     while ( !isMod3Length($cds) ) {
         $ref_structure = shiftStructureLast( $ref_structure, -1 );
         $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-    }
-	
+		return ( $ref_structure, 9991 );
+	  }
+	debug(99,"In extentModelUpstreamStop... 2 ");
     my $AmountExons = scalar( @{ $$ref_structure{pos} } );
     my ($stopPos) = $$ref_structure{pos}[ ( $AmountExons - 1 ) ] =~ /(\d+)$/;
     my $ok = walkFirstStop( ( $stopPos - 2 ), \$sequence, -2, 9991, -3 );
@@ -821,13 +826,17 @@ sub extentModelUpstreamStop {
     else {
 	  $ok = 0
 	}
+	debug(99,"In extentModelUpstreamStop... 3");
 	
-    $cds = getLastExon( $ref_structure, $sequence );
+	$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+	
 	my $peace=substr( $cds, (length($cds)-150));
 	
-    my $amount = getAmountFrameshifts( substr( $cds, (length($cds)-150)) );
-	
+    my $amount = getAmountFrameshifts( $peace );
+	debug(99,"In extentModelUpstreamStop ".$$ref_structure{pos}[0]);
+
 	# check this
+	debug(99,"In extentModelUpstreamStop:  $amount ".length($cds));
     if ($amount > 0 && $amount < 5 && length($cds) > 50 ) {
         $ref_structure = shiftStructureLast( $ref_structure, -1 );
         ( $ref_structure, $ok ) =
@@ -835,7 +844,7 @@ sub extentModelUpstreamStop {
             $refGFF );
     }
 
-
+	debug(99,"In extentModelUpstreamStop:  done");
     return ( $ref_structure, $ok );
 }
 ####################
@@ -957,6 +966,7 @@ sub walkFirstStop {
     ### finds a stop in frame
     ### return the difference to the possible start to the first starting point
     ###
+	debug(99,"Called walkDirstStop $check $ok $dist $step");
 	
     if ( $check < 3 || $check > ( length($$ref_sequence) - 2 ) ) {
 
@@ -1659,24 +1669,34 @@ sub loadConfig {
             }
 			elsif ( $count == 1 ) {
                 $START_CODON{$_} = 1;
-            }
+				print "Start codon: $_\n";
+			  }
             elsif ( $count == 2 ) {
                 $STOP_CODON{$_} = 1;
+				print "Stop codon: $_\n";
+
+				
             }
             elsif ( $count == 3 ) {
                 /(\d+)\.\.(\d+)/;
+				print "Splice Site: $_\n";
 
                 $SPLICE_DONOR{$_}    = 1;
                 $SPLICE_ACCEPTOR{$_} = 1;
             }
             elsif ( $count == 4 ) {
             	chomp;
+				print "Correct Splice site: $_\n";
+				
             	$CORRECT_SPLICESITE = $_ 	
             }
-              elsif ( $count == 5 ) {
-            	chomp;
-            	$CORRECT_PSEUDO = $_	
-            }
+			elsif ( $count == 5 ) {
+			  chomp;
+			  $CORRECT_PSEUDO = $_	;
+			  
+			  print "Correct Pseudo Genes: $_\n";
+			  
+			}
         }
     }
 	else {
@@ -1813,9 +1833,12 @@ sub reverseGFF {
 
 }
 
+
+### new: numbers must be ordered and not negative...
 sub correctEMBL {
     my $embl    = shift;
     my $postfix = shift;
+	
 
     my $res;
     open( F, $embl ) or die "Couldn't open EMBL file $embl.\n";
@@ -1824,23 +1847,33 @@ sub correctEMBL {
 
     my $getNext = 0;
 
+	my $restmp;
+	
     while (<F>) {
         chomp;
         if (/^FT   \S+\s+(\S+,)$/) {
             $getNext = 1;
-            $res .= $_;
+#            $res .= $_;
+			$restmp=$_;
+			
+			
         }
         elsif ($getNext) {
             if (/^FT\s+(.*,)$/) {
                 $getNext = 1;
-                $res .= $1;
+                $restmp .= $1;
+				
             }
             else {
                 /^FT\s+(.*)$/;
                 $getNext = 0;
-                $res .= $1 . "\n";
-            }
+                $restmp .= $1 . "\n";
+				$res.=checkFeaturePos($restmp);
+			  }
         }
+		elsif (/^FT   \S+\s+(\S+)/) {
+		  $res.=checkFeaturePos($_);
+		}
         else {
             $res .= $_ . "\n";
         }
@@ -1851,6 +1884,124 @@ sub correctEMBL {
     close(F);
 }
 
+sub checkFeaturePos{
+  my $str = shift;
+  
+  my ($pre,$coords,$pos) = $str =~ /^(FT   \S+\s+\D*)(\d+.*\d+)(\)*)/;
+
+  my @coor=split(/,/,$coords);
+  my %tmp;
+
+  my $a1;
+  my $b1;
+
+  my $newPos=10;
+  my $count=0;
+
+
+  
+  foreach (@coor) {
+	
+	if (/^(\d+)\.\.(\d+)$/) {
+	  $a1=$1;
+	  $b1=$2;
+	  if ($a1<1) {
+		$a1=$newPos;
+		$newPos+=$newPos
+	  }
+	  if ($b1<1) {
+		$b1=$newPos;
+		$newPos+=$newPos
+	  }
+	  
+	  if ($a1>$b1) {
+		$tmp{$b1}="$b1..$a1"
+	  }
+	  else {
+		$tmp{$a1}="$a1..$b1"
+	  }
+	}
+	elsif (/^(\d+)$/) {
+	  $a1=$1;
+	  if ($a1<1) {
+		$a1=$newPos;
+		$newPos+=$newPos
+	  }
+	  $tmp{$a1}="$a1";
+	}
+	else {
+	  die "Probel mwith the embl file at position: $_\n"
+	}
+  }
+
+  $coords="";
+  foreach my $pos (sort {$a <=> $b} keys %tmp) {
+	$coords.=$tmp{$pos}.","
+  }
+  $coords =~ s/,$//g;
+
+  my %tmp2;
+  
+  #check if overlapping!
+  @coor=split(/,/,$coords);
+ 
+  my $oldEnd=-1;
+  my $oldStart=-1;
+  
+  foreach (@coor) {
+	$count++;
+	
+	if (/^(\d+)\.\.(\d+)$/) {
+	  my $s=$1;
+	  my $e=$2;
+
+	  if ($s < $oldEnd && $e <=$oldEnd) {
+		warn "excluded exons $_ \n";
+		$count--
+	  }
+	  elsif ($s < $oldEnd) {
+		$s=($oldEnd+1);
+		warn "overlapping exons start  $_ \n";
+	  $tmp2{$s}="$s..$e"
+		
+	  }
+	  elsif ($e < $oldEnd) {
+		$e=($oldEnd+4);
+		warn "overlapping exons end $_ \n";
+	  $tmp2{$s}="$s..$e"
+	  }
+	  else {
+		 $tmp2{$s}="$s..$e"
+	  }
+	  $oldEnd=$e;
+	  
+	}
+	elsif (/^(\d+)$/) {
+	  my $s=$1;
+	  if ($s < $oldEnd) {
+		$s=($oldEnd+1);
+		warn "overlapping exons one base $_ \n";
+	  }
+	  $oldEnd=$s;
+	  $tmp2{$s}="$s"
+	}
+  }
+  
+  $coords='';
+  
+  foreach my $pos (sort {$a <=> $b} keys %tmp2) {
+	$coords.=$tmp2{$pos}.","
+  }
+  $coords =~ s/,$//g;
+
+  if ($count >= 2 && (!($pre =~ /join/)) ) {
+	return $pre."join(".$coords.")".$pos."\n";
+  }
+  else {
+	return $pre.$coords.$pos."\n";
+  }
+  
+}
 sub debug {
     my $val = shift;
 
@@ -1882,4 +2033,53 @@ sub checkPseudo{
 	$pos++
   }
   return $pseudo
+}
+
+############################################
+### loadCoords
+############################################
+
+sub loadCoords{
+  my $fileName = shift;
+  my $ref_h    = shift;
+  die "DEPRECATED...\n";
+  
+  open (F, $fileName) or die "Problem to open coords File: $fileName \n";
+  
+  my @File=<F>;
+  
+  ### position of blocks
+ foreach (@File) {
+	# 1       115285  837     116121  115285  115285  99.99   5.36    5.31    Neo_chrII       Neo_chrII
+
+	my ($refPos1,$refPos2,$queryPos1,$queryPos2,$overlap1,$overlap2,$identity,$dum1,$dum2,$refLength,$queryLength,$reference,$query) = split(/\s+/);
+
+	### if the alignment is inverted...
+
+	my $maxQuery=$queryPos2; ### as the alignment length might not be
+                             ### the same, the querypos cannot be
+                             ### bigger than the $queryPos2
+	my $minQuery=$queryPos1;
+
+	
+	my $strand=1;
+	if ($queryPos1 > $queryPos2) {
+		$strand=-1;
+		$minQuery=$queryPos2;
+		$maxQuery=$queryPos1;
+	}
+	for my $pos ($refPos1..$refPos2){
+	  if ($queryPos1< $minQuery ||
+		  $queryPos1 > $maxQuery
+		 ) {
+		$queryPos1-=$strand;
+		
+	  }
+	  
+	  @{ $$ref_h{$reference}[$pos]} = ($query,$queryPos1,$strand);
+	  $queryPos1+=$strand;
+	}
+	
+  }
+  return ($ref_h);
 }

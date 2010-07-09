@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <06-Apr-2010 15:58:43 tdo>
+# Time-stamp: <23-Jun-2010 22:25:28 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -28,8 +28,20 @@ if (!defined($ENV{RATT_HOME})) {
 
 if (!defined($ARGV[0])) {
   print "Sorry, wrong option.\n";
-  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta\ncan be used.\n\n";
+  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta / doEMBL \ncan be used.\n\n";
   exit 1
+}
+elsif ($ARGV[0] eq "doEMBL") {
+  if (! defined($ARGV[1])) {
+	print "\n\nusage: \$RATT_HOME/main.ratt.pl <ResultName> <embl-Annotation> <fasta-file>\n\n".
+	  "This part will generate a vaild embl file, with an ID line and the sequence. The resultfile will be called <ResultName>.embl\n\n";
+	
+	exit;
+	
+  }
+  doEMBL($ARGV[1],$ARGV[2],$ARGV[3]);
+  
+  exit;
 }
 elsif ($ARGV[0] eq "Mutate") {
   if (! defined($ARGV[1])) {
@@ -184,11 +196,11 @@ my $ref_cdsPosition=loadEmbl($emblDir);
 # fill the shift hash with the coords 
 $ref_shift = loadCoords($mummerCoords,$ref_shift);
 
-#print Dumper $ref_shift;
+	  #print Dumper $ref_shift;
 # tune the shift hash with the snp file
 $ref_shift = loadSNP($mummerSNP,$ref_shift,$ref_cdsPosition);
 
-# clean the space of the annotation position
+  # clean the space of the annotation position
 undef($ref_cdsPosition);
 #print Dumper $ref_shift;
 
@@ -242,7 +254,7 @@ saveAnnotation($resultName,$ref_results);
 }
 else {
   print "Sorry, wrong option.\n";
-  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta\ncan be used.\n\n";
+  print "Tranfer / Correct / Check / EMBLFormatCheck / Mutate / Split / Difference / Embl2Fasta / doEMBL\ncan be used.\n\n";
 }
 
 
@@ -250,6 +262,131 @@ else {
 
 ###########################################
 ### subs
+
+
+############################################
+### doEMBL
+############################################
+sub doEMBL{
+  my $resultName = shift;
+  my $emblPart   = shift;
+  my $fastapart  = shift;
+
+  my ($seq,$length)=fasta2EMBLfasta($fastapart);
+  
+  my $res="ID                   $resultName ; ; ; ; ; $length BP.\n".
+          "FH   Key             Location/Qualifiers\n".
+		  "FH                   \n";
+
+  if (-f $emblPart) {
+	### if a file has no embl
+	open F, $emblPart or die "Couldn't open embl file ($emblPart) in doEMBL: $!\n";
+	my @ar=<F>;
+	close(F);
+	$res.=join ('',@ar);
+  }
+
+  
+  ### mal hack: if contig is node, it will have the contigs tag in
+  if ($fastapart =~ /NODE_/) {
+	$res.="FT   contig          1..$length\n";
+	my $col=(3+int(rand(10)));
+	$res.="FT                   /note=\"Contig: $resultName.\"\n";
+	$res.="FT                   /colour=$col\n";
+	  
+  }
+  $res.=$seq."//\n";
+
+  open F, "> $resultName.embl" or die "Couldn't write $resultName.embl in doEMBL: $! \n";
+  print F $res;
+  close(F);
+}
+########################
+### fasta2EMBLfasta
+########################
+sub fasta2EMBLfasta{
+  my $fastapart  = shift;
+  open F, $fastapart or die "Couldn't open embl file ($fastapart) in doEMBL: $!\n";
+  
+  ### we assume single fasta. If it is multifasta, it is going to be flattend
+  $_=<F>;
+  my $seq;
+  
+  while (<F>) {
+	chomp;
+	
+	  if (! (/^>/)) {
+		$seq.=lc($_);
+	  }
+	}
+
+  my @ar=split(//,$seq);
+  
+  my $length = length($seq);
+
+  ### set parameter
+  my $line=60;
+  my $block=10;
+  my $res;
+  my %countB=('a' => 0,
+			  't' => 0,
+			  'g' => 0,
+			  'c' => 0,
+			  'o' => 0
+			 );
+  
+  my $count=0;
+  my $lastline='';
+  foreach (@ar) {
+	if (($count%$line)==0) {
+	  $lastline.="     $_";
+	}
+	elsif (($count%$block)==0) {
+	  $lastline.=" $_";
+	}
+	elsif ((($count+1)%$line)==0) {
+	  $lastline.="$_";
+	  my $l=(81-length($lastline));
+	  $res.=sprintf("%-0s %*d\n",$lastline,$l,($count+1));
+	 # $res.=$lastline;
+	  $lastline=''
+	}
+	else {
+	   $lastline.="$_"
+	}
+
+	### count bases
+	if ($_ eq 'a') {
+	  $countB{a}++
+	}
+	elsif ($_ eq 't') {
+	  $countB{t}++
+	}
+	elsif ($_ eq 'g') {
+	  $countB{g}++
+	}
+	elsif ($_ eq 'c') {
+	  $countB{c}++
+	}
+	else {
+	  $countB{o}++
+	}
+	
+	$count++;
+	
+  }
+ 
+  if ($lastline ne '') {
+	my $l=(81-length($lastline));
+	$res.=sprintf("%-0s %*d\n",$lastline,$l,($count+1));
+  }
+  
+  $res = "SQ   Sequence $count BP; $countB{a} A; $countB{c} C; $countB{g} G; $countB{t} T; $countB{o} other;\n".$res;
+  
+
+  return ($res,$length);
+  
+}
 
 ############################################
 ### loadEMBL
@@ -336,7 +473,7 @@ sub adaptAnnotationEMBL{
   
   #  print Dumper %core;
   my $OKCore=1;
-  my $queryTarget;
+  my $ref_queryTarget;
   my $transfer=0;
   
   while (<F>) {
@@ -359,8 +496,11 @@ sub adaptAnnotationEMBL{
 	  $line.=$1;
 	}
 
-	
-	if ($line =~ /^FT   \S+\s{2,}\D+(\d+)\..*\.(\d+)/ ||
+	if ($line =~ /^>/) {
+	  last;
+	  
+	}
+	elsif ($line =~ /^FT   \S+\s{2,}\D+(\d+)\..*\.(\d+)/ ||
 		$line =~ /^FT   \S+\s{2,}\D+\d+,(\d+)\..*\.(\d+)/ ||
 		$line =~ /^FT   \S+\s{2,}\D+(\d+)/
 	   ) {
@@ -378,7 +518,7 @@ sub adaptAnnotationEMBL{
 	  
 	  
 		  chomp;
-	  ($ref_results,$queryTarget,$ref_Counting,$transfer)=doTransfer($ref_shift,$ref_results,$chr,$posA,$line,$ref_Counting);
+	  ($ref_results,$ref_queryTarget,$ref_Counting,$transfer)=doTransfer($ref_shift,$ref_results,$chr,$posA,$line,$ref_Counting);
 	  
 	  $$ref_Counting{Elements}++;
 	  ### case 1, all ok
@@ -402,25 +542,50 @@ sub adaptAnnotationEMBL{
 	  elsif (defined($$ref_shift{$chr}[$posA][0]) ||
 			 defined($$ref_shift{$chr}[$posE][0])
 			)
-		 {
-#		   $$ref_Counting{"Partial"}++
-			 
-		 }
-
+		{
+		  #		   $$ref_Counting{"Partial"}++
+		  
+		}
+	  
 	}
 	elsif (/^SQ/) {
 	  last;
 	} 
 	elsif ($transfer==1){
-	  $$ref_results[0]{$queryTarget} .= $_;
-	}
+	  my $count=0;
+	  foreach my $queryTarget (keys %$ref_queryTarget) {
+		$count++;
+		if ($count>1) {
+		  if (/\/locus_tag/ || /_id=\"/) {
+			s/\"$/.$count\"/g;
+		  }
+		  $$ref_results[0]{$queryTarget} .= $_;
+		}
+		else {
+		  $$ref_results[0]{$queryTarget} .= $_;
+		}
+	  }
+	 }
 	elsif ($transfer==0){
 	  $$ref_results[1]{$chr} .= $_;
 	}
 	# this is the case when the annotation could be just mapped partially.
 	elsif ($transfer==3){
 	  $$ref_results[1]{$chr} .= $_;
-	  $$ref_results[0]{$queryTarget} .= $_;
+	  my $count=0;
+	  foreach my $queryTarget (keys %$ref_queryTarget) {
+		$count++;
+		  if ($count>1) {
+		  if (/\/locus_tag/ || /_id=\"/) {
+			s/\"$/.$count\"/g;
+		  }
+		  $$ref_results[0]{$queryTarget} .= $_;
+		}
+		else {
+		  $$ref_results[0]{$queryTarget} .= $_;
+		}
+	
+	  }
 	}
 	
   } # end while <F>
@@ -439,11 +604,15 @@ sub doTransfer{
 	my $pos =shift;
 	my $line=shift;
     my $ref_Counting = shift;
+
+	my $RENAME=47;
+	my $RENAME2=249;
 	
 	my $chrqry=0;
 	# the zero will hold the no puttable
 	my %ResultLine;
-	
+
+	  
 	### put complement to it, or get rid of it,
 	### also will need to reorder the numbers
 	my $wasComplement=0;
@@ -502,12 +671,14 @@ sub doTransfer{
 		   ) {
 		  $ar[$i] =~ s/(\d+)/($$ref_shift{$chr}[$1][1])/ge;
 		  $mappedOnce++;
+
 		  
 		  $oldQuery=$$ref_shift{$chr}[$posA][0];
 		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
 		  $ResultLine{$oldQuery."::".$chr}[1] = $pos;
 		  
 		}
+		### left part ok
 		elsif (defined($$ref_shift{$chr}[$posA][0]) &&
 			defined($$ref_shift{$chr}[($posA+74)][0]) &&
 			$$ref_shift{$chr}[($posA+74)][0] eq $$ref_shift{$chr}[$posA][0] &&
@@ -522,6 +693,7 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $posA;
 		  
 		}
+		### 3' ok
 		elsif (defined($$ref_shift{$chr}[$posE][0]) &&
 			defined($$ref_shift{$chr}[($posE-74)][0]) &&
 			$$ref_shift{$chr}[($posE-74)][0] eq $$ref_shift{$chr}[$posE][0] &&
@@ -537,6 +709,49 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $posE;
 		  
 		}
+		elsif (defined($$ref_shift{$chr}[$posA+$RENAME][0]) &&
+			   defined($$ref_shift{$chr}[($posE-$RENAME)][0]) &&
+			   $$ref_shift{$chr}[$posE-$RENAME][0] eq $$ref_shift{$chr}[$posA+$RENAME][0] 
+			   #		abs($$ref_shift{$chr}[$posE][1] - $$ref_shift{$chr}[$posA][1])< (2*($posE-$posA))
+			   
+			   #	   $$ref_shift{$chr}[($posE-$RENAME)][0] eq $$ref_shift{$chr}[$posE][0] &&
+			   #	abs($$ref_shift{$chr}[($posE-$RENAME)][1] - $$ref_shift{$chr}[$posE][1])< 20000
+			  ) {
+#		  print " TST:\n";
+#		  print Dumper $$ref_shift{$chr}[($posA+$RENAME)];
+#		  print Dumper $$ref_shift{$chr}[($posE-$RENAME)];
+		  $ar[$i] = $$ref_shift{$chr}[($posA+$RENAME)][1]."..".$$ref_shift{$chr}[($posE-$RENAME)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posA+$RENAME][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = ($posE-$RENAME);
+		  
+		}
+		elsif (defined($$ref_shift{$chr}[$posA+$RENAME2][0]) &&
+			   defined($$ref_shift{$chr}[($posE-$RENAME2)][0]) &&
+			   $$ref_shift{$chr}[$posE-$RENAME2][0] eq $$ref_shift{$chr}[$posA+$RENAME2][0] 
+			   #		abs($$ref_shift{$chr}[$posE][1] - $$ref_shift{$chr}[$posA][1])< (2*($posE-$posA))
+			   
+			   #	   $$ref_shift{$chr}[($posE-$RENAME2)][0] eq $$ref_shift{$chr}[$posE][0] &&
+			   #	abs($$ref_shift{$chr}[($posE-$RENAME2)][1] - $$ref_shift{$chr}[$posE][1])< 20000
+			  ) {
+#		  print " TST:\n";
+#		  print Dumper $$ref_shift{$chr}[($posA+$RENAME2)];
+#		  print Dumper $$ref_shift{$chr}[($posE-$RENAME2)];
+		  $ar[$i] = $$ref_shift{$chr}[($posA+$RENAME2)][1]."..".$$ref_shift{$chr}[($posE-$RENAME2)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posA+$RENAME2][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = ($posE-$RENAME2);
+		  
+		}
+		
 		else {
 		  $ResultLine{0}[0] .= "$ar[$i],";
 		  $exonMissed++;
@@ -590,7 +805,9 @@ sub doTransfer{
 	  undef $ResultLine{0};
 	}
 	
+	my %targetChr;
 	
+
 	
 	foreach my $trans (keys %ResultLine) {
 	
@@ -598,6 +815,8 @@ sub doTransfer{
 	  if ($trans ne '0'){
 		
 		my ($chrqryLocal,$chrpart) = $trans =~ /^(\S+)::(\S+)$/;
+		$targetChr{$chrqryLocal}=1;
+		
 		my $pos =$ResultLine{$trans}[1];
 		if (!defined($chrqry)){
 		  print $trans."\n";
@@ -659,7 +878,7 @@ sub doTransfer{
 	  $$ref_resultsLocal[0]{$chrqry}.=sprintf("%-4s %-15s %s\n",$parts[0],$parts[1],$ResultLine{$trans}[0]);
 	}
 	}
- 	return ($ref_resultsLocal,$chrqry,$ref_Counting,$transfer);
+ 	return ($ref_resultsLocal,\%targetChr,$ref_Counting,$transfer);
 }
 ############################################
 ### saveAnnotation
@@ -731,6 +950,8 @@ sub loadSNP{
   my @File=<F>;
   close(F);
 
+  my $lastQry="";
+  
   ## walk through the list. The last 
   for my $pos (0..(scalar(@File)-2)) {
 
@@ -749,27 +970,29 @@ sub loadSNP{
 	# TODO 2: what to do with the last SNP?
 	# TODO 3: must be the same contig combination
 	
-
 	
 	if ($refNext ne $reference) {
 	  $ref_shift=walkToEnd($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand);
 	}
 	
 	#case 1: strand 1 and  update due to annotation
-	if (
-		($refNextPos - $refPos) < 50000 &&
-		!defined($$ref_cdsPosition{$reference}{$refPos})    && # this mutation is not on gene
-		defined($$ref_cdsPosition{$refNext}{$refNextPos})   # next mutation is on gene
-		
-      	){
+	elsif ($query eq $queryNext) {
+	 
+	  
+	  if (
+		  ($refNextPos - $refPos) < 50000 &&
+		  !defined($$ref_cdsPosition{$reference}{$refPos})    && # this mutation is not on gene
+		  defined($$ref_cdsPosition{$refNext}{$refNextPos})   # next mutation is on gene
+		  
+		 ){
 		for  (my $posLocal=$refNextPos; $posLocal >=($refPos);$posLocal--){
 		  if (defined($$ref_shift{$reference}[$posLocal][0])) {
 			$$ref_shift{$reference}[$posLocal][1]=$queryNextPos;
 		  } 
 		  $queryNextPos-=$queryStrand
 		}	
-	}
-	else {
+	  }
+	  else {
 		for my $posLocal ($refPos..($refNextPos-1)){
 		  if (defined($$ref_shift{$reference}[$posLocal][0])) {
 			$$ref_shift{$reference}[$posLocal][1]=$queryPos;
@@ -777,9 +1000,15 @@ sub loadSNP{
 		  
 		  $queryPos+=$queryStrand
 		}	
-	}  
-  }
+	  }
+	  
+	}
 
+	$lastQry=$query
+
+	
+  }
+  
   #now have a look a the last line:
   my ($refPos,$refWhat,$queryWhat,$queryPos,
 	  $dum1,$dum2,$refStrand,$queryStrand,
@@ -790,13 +1019,14 @@ sub loadSNP{
   return $ref_shift;	
 }
 
-sub  walkToEnd{
+sub walkToEnd{
   my ($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand) = @_;
   while (defined($$ref_shift{$reference}[$refPos])) {
 	$$ref_shift{$reference}[$refPos][1]=$queryPos;
 	$queryPos+=$queryStrand;
 	$refPos++
   }
+  
   
   return $ref_shift
 }
@@ -834,6 +1064,8 @@ sub loadCoords{
 		$minQuery=$queryPos2;
 		$maxQuery=$queryPos1;
 	}
+#	print "$refPos1..$refPos2 - $reference - $query\n";
+	
 	for my $pos ($refPos1..$refPos2){
 	  if ($queryPos1< $minQuery ||
 		  $queryPos1 > $maxQuery
@@ -857,10 +1089,13 @@ sub loadCoords{
 ## Changes every 250 bp the base to G or C
 sub putMutation{
   my $file = shift;
-
+  my $MUTATION_RATE = shift;
+  
   open (F,$file) or die "Please provide a valid query sequence\n";
 
-  my $MUTATION_RATE=250;
+  if (!defined($MUTATION_RATE)) {
+    $MUTATION_RATE=496;
+  }
   
   my %h;
   my $name;
@@ -868,6 +1103,8 @@ sub putMutation{
 	chomp;
 	if (/^>(\S+)/) {
 	  $name=$1;
+	}
+	elsif (/^\s*$/) {
 	}
 	else {
 	  $h{$name}.=$_;
@@ -886,10 +1123,10 @@ sub putMutation{
 	
 	for (my $i = $MUTATION_RATE; $i < $length ; $i+=$MUTATION_RATE){
 	  if ($seq[$i] ne 'G') {
-		$seq[$i]='G'
+		$seq[$i]="G\n"
 	  }
 	  else {
-		$seq[$i]='C';
+		$seq[$i]="C\n";
 	  }
 	}
 	### mutate the second and the seconlast
