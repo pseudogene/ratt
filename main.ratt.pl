@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <23-Jun-2010 22:25:28 tdo>
+# Time-stamp: <01-Sep-2010 08:23:59 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -16,7 +16,7 @@ use Data::Dumper;
 use lib $ENV{RATT_HOME};
 use ratt_correction;
 
-my $debug=0;
+my $debug=1;
 
 my $SET=1;
 my $COLOR_BAD=4;
@@ -81,6 +81,16 @@ elsif ($ARGV[0] eq "Difference") {
   
   print $stats;
   exit;
+  
+}
+elsif($ARGV[0] eq "addTranslation"){
+   if (scalar(@ARGV) < 2) {
+ 	print "\n\nusage: \$RATT_HOME/main.ratt.pl addTranslation <EMBL file> optional <Translationtable>\n\n".
+	  "If you want to add the translation of the protein relative to the new sequence, run this. The Bioperl module Bioperl::seqio must be installed. Also, the CDS must have a gene, locustag or systematic_id tag.\nThe result will be the embl with a translationtag.\n";
+	
+  	exit (1); 
+  }
+  addTranslation($ARGV[1],$ARGV[2]);
   
 }
 elsif ($ARGV[0] eq "EMBLFormatCheck") {
@@ -181,28 +191,22 @@ elsif ($ARGV[0] eq "Transfer") {
   my $mummerCoords= shift;
   my $resultName  = shift;
   
-  my $dbg=100;
+  my $dbg=49;
   
 
 ## main hash: %ref_shift{Ref_contig}[pos] [0] query_contig
 #										  [1] position
 #										  [2] strand
 my $ref_shift;
-
+  
 
 #load the position of the 
 my $ref_cdsPosition=loadEmbl($emblDir);
 
-# fill the shift hash with the coords 
-$ref_shift = loadCoords($mummerCoords,$ref_shift);
 
-	  #print Dumper $ref_shift;
-# tune the shift hash with the snp file
-$ref_shift = loadSNP($mummerSNP,$ref_shift,$ref_cdsPosition);
+
 
   # clean the space of the annotation position
-undef($ref_cdsPosition);
-#print Dumper $ref_shift;
 
 
 # transfer the annotation the annotation
@@ -222,8 +226,24 @@ my $ref_Counting= {'Partial'         => 0,
 				  };
 
 map {
-	if (/embl$/){
-		($ref_results,$ref_Counting)=adaptAnnotationEMBL($emblDir,$_,$ref_shift,$ref_results,$ref_Counting);
+	if (/(\S+)\.embl$/){
+	  my $refName=$1;
+	  my $ref_shift;
+	  
+	  # fill the shift hash with the coords 
+	  $ref_shift = loadCoords($mummerCoords,$ref_shift,$refName);
+	  	  #print Dumper $ref_shift;
+	  # tune the shift hash with the snp file
+	  my $ref_shift2 = loadSNP($mummerSNP,$ref_shift,$ref_cdsPosition,$refName);
+	  
+	  ($ref_results,$ref_Counting)=adaptAnnotationEMBL($emblDir,$_,$ref_shift2,$ref_results,$ref_Counting);
+
+	  ### cleaning step
+	  foreach (0..(scalar(@{$$ref_shift{$refName}}))-1) {
+		undef(@{ $$ref_shift{$refName}[$_]});
+	  }
+	  undef %$ref_shift;
+	  
 	
 	}
 } readdir(DIR);
@@ -470,6 +490,9 @@ sub adaptAnnotationEMBL{
 	### get the name of the contig/supercontig/chromosome
   my ($chr) = $embl =~ /\/{0,1}(\S+)\.embl$/;
 
+  ## tag to not transfer reference sequence specific tags.
+  my $inTranslation=0;
+  
   
   #  print Dumper %core;
   my $OKCore=1;
@@ -551,19 +574,42 @@ sub adaptAnnotationEMBL{
 	elsif (/^SQ/) {
 	  last;
 	} 
+	### transfer it to the new 
 	elsif ($transfer==1){
 	  my $count=0;
+	  
 	  foreach my $queryTarget (keys %$ref_queryTarget) {
 		$count++;
-		if ($count>1) {
-		  if (/\/locus_tag/ || /_id=\"/) {
-			s/\"$/.$count\"/g;
+		### check for the translation tag:
+		if ($inTranslation && /\"/) {
+		  ### do not transfer , but it is the end
+		  $inTranslation=0
+		}
+		elsif ($inTranslation) {
+		  ### do not transfer
+		}
+		elsif (/\/translation=/) {
+		  $inTranslation=1;
+	
+		   
+		  ### just to double check if not smalle
+		  if (/\".*\"/) {
+			$inTranslation=0
 		  }
-		  $$ref_results[0]{$queryTarget} .= $_;
 		}
 		else {
-		  $$ref_results[0]{$queryTarget} .= $_;
+		  
+		  if ($count>1) {
+			if (/\/locus_tag/ || /_id=\"/) {
+			  s/\"$/.$count\"/g;
+			}
+			$$ref_results[0]{$queryTarget} .= $_;
+		  }
+		  else {
+			$$ref_results[0]{$queryTarget} .= $_;
+		  }
 		}
+		# end else inTransation
 	  }
 	 }
 	elsif ($transfer==0){
@@ -612,7 +658,7 @@ sub doTransfer{
 	# the zero will hold the no puttable
 	my %ResultLine;
 
-	  
+	
 	### put complement to it, or get rid of it,
 	### also will need to reorder the numbers
 	my $wasComplement=0;
@@ -637,6 +683,7 @@ sub doTransfer{
 	my $partialCount=0;
 	
 	for (my $i=0;$i < scalar(@ar);$i++) {
+	  my $new = $ar[$i];
 	  
 	  #single base exon
 	  if (! ($ar[$i] =~ /\.\./) ) {
@@ -664,6 +711,8 @@ sub doTransfer{
 		$ar[$i] =~ /(\d+)\.\.(\d+)/;
 		my $posA=$1;
 		my $posE=$2;
+		my $half=int ($posE-$posA);
+		
 		if (defined($$ref_shift{$chr}[$posA][0]) &&
 			defined($$ref_shift{$chr}[$posE][0]) &&
 			$$ref_shift{$chr}[$posE][0] eq $$ref_shift{$chr}[$posA][0] &&
@@ -678,12 +727,26 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $pos;
 		  
 		}
+		elsif (defined($$ref_shift{$chr}[$posA][0]) &&
+			   (defined($$ref_shift{$chr}[($posA+299)][0])) &&
+			   $$ref_shift{$chr}[($posA+299)][0] eq $$ref_shift{$chr}[$posA][0]
+			   && abs($$ref_shift{$chr}[($posA+299)][1] - $$ref_shift{$chr}[$posA][1])< 20000
+			  ) {
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+299)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posA][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = $posA;
+		  
+		}
 		### left part ok
 		elsif (defined($$ref_shift{$chr}[$posA][0]) &&
-			defined($$ref_shift{$chr}[($posA+74)][0]) &&
-			$$ref_shift{$chr}[($posA+74)][0] eq $$ref_shift{$chr}[$posA][0] &&
-			abs($$ref_shift{$chr}[($posA+74)][1] - $$ref_shift{$chr}[$posA][1])< 20000
-		   ) {
+			   (defined($$ref_shift{$chr}[($posA+74)][0])) &&
+			   $$ref_shift{$chr}[($posA+74)][0] eq $$ref_shift{$chr}[$posA][0]
+			   && abs($$ref_shift{$chr}[($posA+74)][1] - $$ref_shift{$chr}[$posA][1])< 20000
+			  ) {
 		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+74)][1];
 		  $mappedOnce++;
 		  $partialCount++;
@@ -693,7 +756,37 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $posA;
 		  
 		}
+		elsif (defined($$ref_shift{$chr}[$posA][0]) &&
+			   (defined($$ref_shift{$chr}[($posA+14)][0])) &&
+			   $$ref_shift{$chr}[($posA+14)][0] eq $$ref_shift{$chr}[$posA][0]
+			   && abs($$ref_shift{$chr}[($posA+14)][1] - $$ref_shift{$chr}[$posA][1])< 20000
+			  ) {
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+14)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posA][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = $posA;
+		  
+		}
+
 		### 3' ok
+		elsif (defined($$ref_shift{$chr}[$posE][0]) &&
+			defined($$ref_shift{$chr}[($posE-299)][0]) &&
+			$$ref_shift{$chr}[($posE-299)][0] eq $$ref_shift{$chr}[$posE][0] &&
+			abs($$ref_shift{$chr}[($posE-299)][1] - $$ref_shift{$chr}[$posE][1])< 20000
+		   ) {
+		  $ar[$i] = $$ref_shift{$chr}[($posE-299)][1]."..".$$ref_shift{$chr}[($posE)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posE][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = $posE;
+		  
+		}
 		elsif (defined($$ref_shift{$chr}[$posE][0]) &&
 			defined($$ref_shift{$chr}[($posE-74)][0]) &&
 			$$ref_shift{$chr}[($posE-74)][0] eq $$ref_shift{$chr}[$posE][0] &&
@@ -709,6 +802,41 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $posE;
 		  
 		}
+		elsif (defined($$ref_shift{$chr}[$posE][0]) &&
+		   defined($$ref_shift{$chr}[($posE-14)][0]) &&
+			$$ref_shift{$chr}[($posE-14)][0] eq $$ref_shift{$chr}[$posE][0] &&
+			abs($$ref_shift{$chr}[($posE-14)][1] - $$ref_shift{$chr}[$posE][1])< 20000
+		   ) {
+		  $ar[$i] = $$ref_shift{$chr}[($posE-14)][1]."..".$$ref_shift{$chr}[($posE)][1];
+		  $mappedOnce++;
+		  $partialCount++;
+
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posE][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = $posE;
+		  
+		}
+		elsif (defined($$ref_shift{$chr}[$half][0]) 
+		
+		   ) {
+		  my $start=($$ref_shift{$chr}[$half][1]-$half);
+		  if ($start<1) {
+			$start=1;
+		  }
+		  my $end=($$ref_shift{$chr}[$half][1]+$half-15);
+		  $ar[$i] = $start."..".$end;
+		  $mappedOnce++;
+		  $partialCount++;
+
+		  
+		  $oldQuery=$$ref_shift{$chr}[$posE][0];
+		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
+		  $ResultLine{$oldQuery."::".$chr}[1] = $end;
+		  
+		}
+
+		
 		elsif (defined($$ref_shift{$chr}[$posA+$RENAME][0]) &&
 			   defined($$ref_shift{$chr}[($posE-$RENAME)][0]) &&
 			   $$ref_shift{$chr}[$posE-$RENAME][0] eq $$ref_shift{$chr}[$posA+$RENAME][0] 
@@ -944,6 +1072,8 @@ sub loadSNP{
   my $fileName        = shift;
   my $ref_shift       = shift;
   my $ref_cdsPosition = shift;
+  my $refName  = shift;
+
   
   open (F, $fileName) or die "Problem to open SNP File: $fileName \n";
   
@@ -957,56 +1087,59 @@ sub loadSNP{
 
 	# get the positions of the snp'indels of before and last
 	my @previous;
-	if ($pos >0) { @previous = split(/\s+/,$File[($pos-1)]);}
-	my ($refPos,$refWhat,$queryWhat,$queryPos,$dum1,$dum2,$refStrand,$queryStrand,$reference,$query) = split(/\s+/,$File[$pos]);
-	my @next = split(/\s+/,$File[($pos+1)]);
-	
-#	my ($refPreviousPos,$refPrevious,$queryPrevious) 
-#		= ($previous[0],$previous[3],$previous[8],$previous[9]);
-	my ($refNextPos,$queryNextPos,$refNext,$queryNext) 
-		= ($next[0],$next[3],$next[8],$next[9]);
-	
-	# TODO 1: differ is next is not in the same combination	
-	# TODO 2: what to do with the last SNP?
-	# TODO 3: must be the same contig combination
-	
-	
-	if ($refNext ne $reference) {
-	  $ref_shift=walkToEnd($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand);
+	if ($pos >0) {
+	  @previous = split(/\s+/,$File[($pos-1)]);
 	}
+	my ($refPos,$refWhat,$queryWhat,$queryPos,$dum1,$dum2,$dum3,$dum4,$refStrand,$queryStrand,$reference,$query) = split(/\s+/,$File[$pos]);
 	
-	#case 1: strand 1 and  update due to annotation
-	elsif ($query eq $queryNext) {
-	 
+	if (!(defined($refName)) || $refName eq $reference) {
 	  
-	  if (
-		  ($refNextPos - $refPos) < 50000 &&
-		  !defined($$ref_cdsPosition{$reference}{$refPos})    && # this mutation is not on gene
-		  defined($$ref_cdsPosition{$refNext}{$refNextPos})   # next mutation is on gene
-		  
-		 ){
-		for  (my $posLocal=$refNextPos; $posLocal >=($refPos);$posLocal--){
-		  if (defined($$ref_shift{$reference}[$posLocal][0])) {
-			$$ref_shift{$reference}[$posLocal][1]=$queryNextPos;
-		  } 
-		  $queryNextPos-=$queryStrand
-		}	
-	  }
-	  else {
-		for my $posLocal ($refPos..($refNextPos-1)){
-		  if (defined($$ref_shift{$reference}[$posLocal][0])) {
-			$$ref_shift{$reference}[$posLocal][1]=$queryPos;
-		  }
-		  
-		  $queryPos+=$queryStrand
-		}	
+	  my @next = split(/\s+/,$File[($pos+1)]);
+	  
+	  my ($refNextPos,$queryNextPos,$refNext,$queryNext) 
+		= ($next[0],$next[3],$next[10],$next[11]);
+	  
+	  # TODO 1: differ is next is not in the same combination	
+	  # TODO 2: what to do with the last SNP?
+	  # TODO 3: must be the same contig combination
+	  
+	  
+	  if ($refNext ne $reference) {
+		$ref_shift=walkToEnd($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand);
 	  }
 	  
+	  #case 1: strand 1 and  update due to annotation
+	  elsif ($query eq $queryNext && abs($refNextPos - $refPos) < 50000) {
+		
+		if (
+			!defined($$ref_cdsPosition{$reference}{$refPos})    && # this mutation is not on gene
+			defined($$ref_cdsPosition{$refNext}{$refNextPos})   # next mutation is on gene
+			
+		   ){
+		  for  (my $posLocal=$refNextPos; $posLocal >=($refPos);$posLocal--){
+			if (defined($$ref_shift{$reference}[$posLocal][0])) {
+			  $$ref_shift{$reference}[$posLocal][1]=$queryNextPos;
+			} 
+			$queryNextPos-=$queryStrand;
+		  }	
+		}
+		else {
+		  for my $posLocal ($refPos..($refNextPos-1)){
+			if (defined($$ref_shift{$reference}[$posLocal][0])) {
+			  $$ref_shift{$reference}[$posLocal][1]=$queryPos;
+			  
+			}
+			
+			$queryPos+=$queryStrand
+		  }	
+		}
+		
+	  }
+	  $lastQry=$query
 	}
-
-	$lastQry=$query
-
-	
+		
+		
+		
   }
   
   #now have a look a the last line:
@@ -1024,6 +1157,7 @@ sub walkToEnd{
   while (defined($$ref_shift{$reference}[$refPos])) {
 	$$ref_shift{$reference}[$refPos][1]=$queryPos;
 	$queryPos+=$queryStrand;
+#	print "$refPos -3-> $queryPos\n";
 	$refPos++
   }
   
@@ -1039,6 +1173,8 @@ sub walkToEnd{
 sub loadCoords{
   my $fileName = shift;
   my $ref_h    = shift;
+  my $refName  = shift;
+  
   
   open (F, $fileName) or die "Problem to open coords File: $fileName \n";
   
@@ -1052,32 +1188,35 @@ sub loadCoords{
 
 	### if the alignment is inverted...
 
-	my $maxQuery=$queryPos2; ### as the alignment length might not be
-                             ### the same, the querypos cannot be
-                             ### bigger than the $queryPos2
-	my $minQuery=$queryPos1;
-
+	if (!(defined($refName)) || $refName eq $reference) {
 	
-	my $strand=1;
-	if ($queryPos1 > $queryPos2) {
+	  my $maxQuery=$queryPos2; ### as the alignment length might not be
+	  ### the same, the querypos cannot be
+	  ### bigger than the $queryPos2
+	  my $minQuery=$queryPos1;
+	  
+	  
+	  my $strand=1;
+	  if ($queryPos1 > $queryPos2) {
 		$strand=-1;
 		$minQuery=$queryPos2;
 		$maxQuery=$queryPos1;
-	}
-#	print "$refPos1..$refPos2 - $reference - $query\n";
-	
-	for my $pos ($refPos1..$refPos2){
-	  if ($queryPos1< $minQuery ||
-		  $queryPos1 > $maxQuery
-		 ) {
-		$queryPos1-=$strand;
-		
 	  }
+	  #	print "$refPos1..$refPos2 - $reference - $query\n";
 	  
-	  @{ $$ref_h{$reference}[$pos]} = ($query,$queryPos1,$strand);
-	  $queryPos1+=$strand;
+	  for my $pos ($refPos1..$refPos2){
+		if ($queryPos1< $minQuery ||
+			$queryPos1 > $maxQuery
+		   ) {
+		  $queryPos1-=$strand;
+		  
+		}
+		
+		@{ $$ref_h{$reference}[$pos]} = ($query,$queryPos1,$strand);
+		$queryPos1+=$strand;
+	  }
 	}
-	
+		
   }
   return ($ref_h);
 }
@@ -1369,8 +1508,143 @@ sub Embl2Fasta{
 	  
 	}
   } readdir(DIR);
+
+  if (!defined($fasta)) {
+	die "Sorry the embl file contained no sequence. Please specify a fasta file for the reference.\n";
+	
+  }
   open F, "> $fastaResult" or die "Couldn't write file $fastaResult in Embl2Fasta: $!\n";
   print F $fasta;
   close(F);
   
+}
+sub addTranslation
+{
+  my($embl_file, $translationTable) = @_;
+  my %seqs = ();
+  
+  use Bio::SeqIO;
+  if ((!defined($translationTable))) {
+	$translationTable=1
+  }
+  my %translations;
+  
+  my $stream = Bio::SeqIO->new(-file => $embl_file, -format => 'EMBL');
+  
+  while ( (my $seq = $stream->next_seq()) )
+	{
+	  my @features = $seq->get_SeqFeatures();
+	  
+	  my $current_id = '';
+	  
+	  foreach my $feat (@features)
+		{
+		  
+		  next unless $feat->primary_tag eq 'CDS';
+		  
+		  foreach my $tag ( $feat->get_all_tags() )
+			{
+			  if ($tag eq 'systematic_id' || $tag eq 'locus_tag' || $tag eq 'gene')
+				{
+				  $current_id = join(' ',$feat->get_tag_values($tag));
+				}
+			  elsif ($tag eq 'transl_table') {
+				$translationTable= join(' ',$feat->get_tag_values($tag));
+			  }
+			}
+		  
+		  my $cds_obj = $feat->spliced_seq;
+		  my $cds_seq = $cds_obj->seq;
+		  
+		  my $seq_length = length $cds_seq;
+		  
+		  my $substr_length = $seq_length;
+		  
+		  #print $substr_length."\n";
+		  
+		  $cds_seq = substr($cds_seq, 0, ($substr_length));
+		  
+		  $translationTable= int $translationTable;
+		  
+		  my $translation = $cds_obj->translate("*",undef,undef, $translationTable);
+
+		  my $aa = $translation->seq();
+		  
+		  my $aa_length = length $aa;
+		  
+		  $aa = substr($aa, 0, $aa_length );
+		  $aa = "/translation=\"$aa";
+
+		  my $tmp;
+		  my $lineLength=59;
+		  
+		  for (0..(length($aa)/$lineLength)) {
+			if ((length($aa)<($lineLength*($_+1)))) {
+			  $tmp.="FT                   ".substr($aa,($lineLength*$_),$lineLength)."\"\n";
+			}
+			else {
+			  $tmp.="FT                   ".substr($aa,($lineLength*$_),$lineLength)."\n";
+			}
+		  }
+		  
+		  $translations{$current_id}=$tmp;
+		  
+		}
+	}
+  
+  ### put it in embl file
+  open F,  $embl_file;
+  my $res;
+
+
+  my $current_id='';
+  my $inCDS;
+  
+  while (<F>) {
+
+	if (/FT   \S+/ && $inCDS && $current_id) {
+	  if ($current_id) {
+		$res.=$translations{$current_id};
+		$current_id=''
+	  }
+	  $inCDS=0
+	}
+	
+	if (/FT\s+\/gene=\"(\S+)\"/ ||
+		/FT\s+\/systematic_id=\"(\S+)\"/ ||
+		/FT\s+\/locus_tag=\"(\S+)\"/   ) {
+	  $current_id=$1;
+	  $res.=$_;
+	}
+	elsif (/FT   CDS/) {
+	  $inCDS=1;
+	  $res.=$_;
+	  
+	}
+	elsif (/^XX/) {
+	  if ($current_id) {
+		$res.=$translations{$current_id};
+		
+		$current_id=''
+	  }
+	  $res.=$_;
+	}
+	elsif (/^SQ/) {
+	  if ($current_id) {
+		$res.=$translations{$current_id};
+		$current_id=''
+	  }
+	  $res.=$_;
+	}
+	else {
+	  $res.=$_;
+	}
+  }
+  close(F);
+  
+  ### write the results;
+  my ($name) = $embl_file =~ /^(\S+)\.embl$/;
+  open (F, "> $name.withTranslation.embl") or die "Couldn't write file $name.withTranslation.embl : $! in addTranslation\n";
+  print F $res;
+  close(F);
 }

@@ -47,7 +47,13 @@ if [ -z "$parameterSet" ]; then
                            ..."
 
 	echo " or, for runs after iCORN:
-$RATT_HOME/start.ratt.sh ICORN <Directory with embl-files> <Query -used for iCORN> <pretag annotation > <iteration>" 
+$RATT_HOME/start.ratt.sh ICORN <Directory with embl-files> <Last output of iCORN> <ResultName >
+
+embl-annotation files     - This directory contains all the embl files that should be transfered to the query.
+  Last output of iCORN    - The name of the reference.x - were x is the last iteration.
+  ResultName              - The prefix you wish to give to each result file.
+
+" 
    exit
  fi
 
@@ -58,16 +64,22 @@ if [ ! -z "$RATT_VERBOSE" ]
 else
 	verbose=0;
 fi
+
+if [ -z "$RATT_DOTRANSLATION" ] ;
+	then
+	RATT_DOTRANSLATION=0	
+fi
+
 ### nucmer call as function
 function doNucmer {
 #	if [ "$verbose" == 1 ] 
 #		then 
-		echo "nucmer  $other_nucmer -g $g -p $name -c $c -l $l $ref $query"
-		echo "delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta"
+#		echo "nucmer  $other_nucmer -g $g -p $name -c $c -l $l $ref $query"
+#		echo "delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta"
 #	fi
 	nucmer $other_nucmer -g $g -p $name -c $c -l $l $ref $query &> /dev/null
 	delta-filter $rearrange -i $minInd $name.delta > $name.filter.delta
-	show-snps -CHTr $name.filter.delta > $name.snp
+	show-snps -HTr $name.filter.delta > $name.snp
 	show-coords -clHT $name.delta > $name.coords
 	show-coords -clHT $name.filter.delta > $name.filter.coords
 }
@@ -75,6 +87,14 @@ function doNucmer {
 function doiCORN {
 
 
+	echo " embl file are in embl_DIR
+ 	root is $root
+    pre_embl is $pre_embl
+    iteration is $iteration
+"
+
+	echo "================="
+	cd "$root$(($iteration-1))"
 
 	cd "$root$(($iteration-1))"
 	
@@ -99,8 +119,8 @@ function doiCORN {
 	for x in `grep '>' ../$root.$iteration | sed 's/>//g' | awk '{ print $1 }'` ; do
 		cat ../$root.*.$x.gff > ../All.$x.gff;
 		egrep "\"INS|\"DEL"  ../All.$x.gff | sort -n -k 4 > tmp/All.indel.$x.gff; 
-		echo "perl $RATT_HOME/ratt.icorn.pl embl.$tmp/$pre_embl$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000"
-		perl $RATT_HOME/ratt.icorn.pl  embl.$tmp/$pre_embl$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000 > out;
+		echo "perl $RATT_HOME/ratt.icorn.pl embl.$tmp/$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000"
+		perl $RATT_HOME/ratt.icorn.pl  embl.$tmp/$x.embl tmp/All.indel.$x.gff $x $x.embl 4000000 > out;
 echo "perl ~/Bin/icorn.flagNonCorrectedRegions.pl Seq/$x plot/Iter.$iteration.$x.plot $x 20 100 Not+Corrected"
 		perl ~/Bin/icorn.flagNonCorrectedRegions.pl Seq/$x plot/Iter.$iteration.$x.plot $x 20 100 Not+Corrected;
 		
@@ -110,13 +130,13 @@ echo "perl ~/Bin/icorn.flagNonCorrectedRegions.pl Seq/$x plot/Iter.$iteration.$x
 }
 
 if [ "$refembl" == "iCORN" ] ; then 
-	embl_DIR=$2;
-	root=$3
-	iteration=$5
-	pre_embl=$4
-	doiCORN;
-	echo done;
-	exit;
+	refembl=$2;
+	query=$3
+	result=$4
+#	doiCORN;
+#	echo done;
+#	exit;
+	parameterSet="Assembly"
 fi
 
 ### check path of nucmer and the perl transferprogram
@@ -361,31 +381,28 @@ perl $RATT_HOME/main.ratt.pl Split ../tmpSeqXXX.$tmp
 cd ..
 rm tmpSeqXXX.$tmp
 
-	echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
+echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
 
 
 for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
-	if [ -f "$result.$nameRes.embl" ] 
-		
-		echo "	perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl $query $nameRes"
-		if [ ! -z "$verbose" ] 
-			then
-			echo "Nucmer is done. Now Correct the annotation for chromosome $nameRes."
-			echo "perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $result.$nameRes"
-		fi
-		then
+	echo "work on $nameRes"
+	if [ -f "$result.$nameRes.embl" ] ; then
+		echo "************************ Correction *****"
 		perl $RATT_HOME/main.ratt.pl Correct $result.$nameRes.embl Sequences/$nameRes $result.$nameRes
-		echo "If you want to start art (assume just one replicon):"
-		echo "art  Sequences/$nameRes + $nameRes.final.embl + Query/$result.$nameRes.Mutations.gff"
-
+	echo "************************ "
+	else 
+		### generate empty file for the joining 
+		touch $result.$nameRes.tmp2.embl
 	fi
+
+	perl $RATT_HOME/main.ratt.pl doEMBL $result.$nameRes.final $result.$nameRes.tmp2.embl Sequences/$nameRes 
+	if [ "$RATT_DOTRANSLATION" -eq 1 ] ; then
+		perl $RATT_HOME/main.ratt.pl addTranslation $result.$nameRes.final.embl
+	fi
+	echo "If you want to start artemis on this replicon:"
+	echo "art $result.$nameRes.final.embl + $result.$nameRes.Report.gff  + Query/$result.$nameRes.Mutations.gff"
+
 done
 
+rm $result*embl.tmp.BBA.embl $result.$nameRes.tmp2.embl
 
-
-### clean the files
-if [  -z "$verbose" ]
-	then 
-	rm $result*embl.tmp.BBA.embl
-	rm $name*
-fi

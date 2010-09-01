@@ -45,7 +45,7 @@ my %STOP_CODON = (
     'TAG' => 1,
     'TAA' => 1
 );
-my $CORRECT_SPLICESITE=0;
+my $CORRECT_SPLICESITE=1;
 my $CORRECT_PSEUDO=1;
 
 my %START_CODON     = ( 'ATG' => 1 );
@@ -132,9 +132,10 @@ sub doit {
     my $ref_stats;
 
     ### gff file including position of errors and done changes
-    my $GFFfile;
-
-    my ( $revAnnotation, $ref_revStats, $revGFFfile, $newrevEMBL, $newEMBL );
+    my $GFFfile="";
+	my $revGFFfile='';
+	
+    my ( $revAnnotation, $ref_revStats, , $newrevEMBL, $newEMBL );
     if ( $method eq "Check" ) {
         my $revSequence = reverseEMBL( $embl, $sequence, "reverse.embl" );
         ( $newAnnotation, $ref_stats, $GFFfile ) =
@@ -158,7 +159,7 @@ sub doit {
     #  }
 
 	if ( $method eq "Correct" ) {
-	  open( F, "> $ResultName.final.embl" )
+	  open( F, "> $ResultName.tmp2.embl" )
 		or die "Couldn't write the gff file...\n";
 	  print F $newEMBL;
 	  close(F);
@@ -167,14 +168,19 @@ sub doit {
     # write results:
     open( F, "> $ResultName.Report.gff" )
       or die "Couldn't write the gff file...\n";
-    print F $GFFfile . $revGFFfile;
-    close(F);
 
+	if (defined($GFFfile)){
+	  print F $GFFfile;
+	}
+	if (defined($revGFFfile)) {
+	  print F $revGFFfile;
+	}
+    close(F);
+	
     my $res .= printErrorStats($ref_stats);
     if ( $method eq "Check" ) {
         $res .= printErrorStats($ref_revStats);
     }
-    print $res;
 
     open( F, "> $ResultName.Report.txt" )
       or die "Couldn't write the gff file...\n";
@@ -201,6 +207,7 @@ sub correctModel {
 
     my $ref_structure;
 
+	
     open( F, $emblFile )
       or die "Sorry, couldn't open annotation file $emblFile: $_\n";
 
@@ -212,6 +219,7 @@ sub correctModel {
 	  chomp;
 	  if (/^FT   CDS\s{2,}(\S+)$/) {
 		my $isPseudo=checkPseudo(\@EMBL,$pos);
+		
 		if (!($isPseudo) ||
 			($CORRECT_PSEUDO)) {
 		  
@@ -236,7 +244,9 @@ sub correctModel {
 		  if ($DEBUG > 500) {
 			print Dumper  \@{ $$ref_structure{pos} };
 			
-		  }	
+		  }
+		  
+		  ### check for ok start codon
 		  if ( !isStartOK($cds) ) {
 			debug(50,"Start is wrong");
 			#		  $GFFfile.=doGFF($$ref_structure{start},"BadStart","Start wrong",$isComplement,length($sequence));
@@ -296,7 +306,7 @@ sub correctModel {
 		  my ( $amount, $lastPos ) =
 			amountWrongspliceDonors( $ref_structure, $sequence );
 		  
-		  if ($amount) {
+		  if ($amount && $CORRECT_SPLICESITE) {
 			debug( 1, "Splice donor wrong" );
 			
 			$GFFfile .=
@@ -316,6 +326,15 @@ sub correctModel {
 			
 		  }
 		  
+		  ##update the cds
+		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
+		  debug(10,"Check Frame shifts");
+		  if ($DEBUG > 500) {
+			print Dumper  \@{ $$ref_structure{pos} };
+			
+		  }
+
+		
 		  
 		  ##update the cds
 		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
@@ -323,7 +342,9 @@ sub correctModel {
 		  if ($DEBUG > 500) {
 			print Dumper  \@{ $$ref_structure{pos} };
 			
-		  }	
+		  }
+		  
+		  #### Check for frameshifts;
 		  if ( ( my $amount = getAmountFrameshifts($cds) ) ) {
 			
 			$$ref_stats{$id}{frameshifts} = $amount;
@@ -355,7 +376,7 @@ sub correctModel {
 		  
 		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
 		  debug(10,"Check Length");
-		  
+		  debug(10,length($cds)."  length");
 		  if ( !isMod3Length($cds) ) {
 			$GFFfile .= doGFF(
 							  $$ref_structure{start},  "Error",
@@ -365,35 +386,59 @@ sub correctModel {
 			$$ref_stats{$id}{length} = 1;
 			$$ref_stats{$id}{error}++;
 			my $count_=0;
+			debug(10,"Wrong length");
 			
-			while (! isMod3Length($cds) && $count_ <6 ){
+			while (! isMod3Length($cds) && $count_ < 6 ){
 			  $count_++;
+			  		debug(10,length($cds)."  length");
 			  $ref_structure=shiftStructureLast($ref_structure,1);
 			  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );	
 			}
-			
+			debug(10,length($cds)."  length");
 		  }
 		  
 		  debug(10,"Check Stop");
 		  
+
 		  
 		  $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
 		  
+		  my $AmountExons = scalar( @{ $$ref_structure{pos} } );	
+		  my ($Last_start,$last_end) = $$ref_structure{pos}[ ( $AmountExons - 1 ) ] =~ /(\d+)\.\.(\d+)$/;
+		  my $lengthLastExon = ($last_end-$Last_start+1);
+		  my $diff = ($lengthLastExon%3);
+		  $lengthLastExon -= $diff;
 		  
-		  my $amountFrame = getAmountFrameshifts($cds);
+		  my $peace;
+		 
+		  
+		  if ($lengthLastExon<150) {
+			$peace=substr( $cds, (length($cds)-$lengthLastExon));
+		  }
+		  else {
+			$peace=substr( $cds, (length($cds)-150));
+		  }
+		  
+		  my $amountFrame = getAmountFrameshifts($peace);
 		  
 		  if ( !isStopOK($cds) || ($amountFrame > 0 && $amountFrame < 5)) {
+		#	 print "$lengthLastExon\n";
 			### two case, no stop codon, so look at the end.
 			### more than one, find an earlier stop...
-			debug( 50, "Stop is wrong" );
-			
+			debug( 10, "Stop is wrong" );
 			$$ref_stats{$id}{StopBad} = 1;
 			$$ref_stats{$id}{error}++;
-		
+
+			if (isStopOK($cds)) {
+			  ### sequence has Two stop codons, get of the last rid.
+			  $ref_structure=shiftStructureLast($ref_structure,-3);
+
+			}
+
 			my $ok     = 0;
-			debug(99,"OK $ok amount $amount");
+			debug(10,"OK $ok amountFrameshift $amountFrame");
 			
-			if ( $amount == 0 ) {
+			if ( $amountFrame == 0 ) {
 			  ( $ref_structure, $ok ) = extentModelDownstreamStop(
 																  $ref_structure,         $sequence,
 																  \%{ $$ref_stats{$id} }, \$GFFfile
@@ -452,7 +497,9 @@ sub correctModel {
 			$isComplement = 0;
 		  }
 		  else {
+			
 			$res .= printStructurePos($ref_structure) . "\n";
+			
 		  }
 		} ### is pseudo
 		
@@ -461,7 +508,7 @@ sub correctModel {
 		$res .= $_ . "\n";
 	  }    # else if CDS
 	  $pos++;
-    }    # foreach
+    }
     return ( $ref_annotation, $ref_stats, $GFFfile, $res );
 	
   }
@@ -808,8 +855,7 @@ sub extentModelUpstreamStop {
     my $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
 
 	debug(99,"In extentModelUpstreamStop...");
-	
-    while ( !isMod3Length($cds) ) {
+	debug(10,length($cds)."  length");    while ( !isMod3Length($cds) ) {
         $ref_structure = shiftStructureLast( $ref_structure, -1 );
         $cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
 		return ( $ref_structure, 9991 );
@@ -829,16 +875,27 @@ sub extentModelUpstreamStop {
 	debug(99,"In extentModelUpstreamStop... 3");
 	
 	$cds = buildGene( \@{ $$ref_structure{pos} }, $sequence );
-	
-	my $peace=substr( $cds, (length($cds)-150));
+
+	my ($Last_start,$last_end) = $$ref_structure{pos}[ ( $AmountExons - 1 ) ] =~ /(\d+)\.\.(\d+)$/;
+	my $lengthLastExon = ($last_end-$Last_start+1);
+	my $peace;
+	my $diff = ($lengthLastExon%3);
+	$lengthLastExon -= $diff;
+	if ($lengthLastExon<150) {
+	  $peace=substr( $cds, (length($cds)-$lengthLastExon));
+	}
+	else {
+	  $peace=substr( $cds, (length($cds)-150));
+	}
 	
     my $amount = getAmountFrameshifts( $peace );
 	debug(99,"In extentModelUpstreamStop ".$$ref_structure{pos}[0]);
 
 	# check this
-	debug(99,"In extentModelUpstreamStop:  $amount ".length($cds));
+	debug(99,"In extentModelUpstreamStop: Amount of frame shifts $amount ".length($cds));
     if ($amount > 0 && $amount < 5 && length($cds) > 50 ) {
-        $ref_structure = shiftStructureLast( $ref_structure, -1 );
+	  
+        $ref_structure = shiftStructureLast( $ref_structure, -3 );
         ( $ref_structure, $ok ) =
           extentModelUpstreamStop( $ref_structure, $sequence, $ref_statsGene,
             $refGFF );
@@ -969,21 +1026,24 @@ sub walkFirstStop {
 	debug(99,"Called walkDirstStop $check $ok $dist $step");
 	
     if ( $check < 3 || $check > ( length($$ref_sequence) - 2 ) ) {
-
+	  debug(99,"In walkDirstStop return $ok ");
         return $ok;
     }
     else {
         my $codon = uc( substr( $$ref_sequence, ( $check - 1 ), 3 ) );
 
         if ( isStopOK($codon) ) {
+		  debug(99,"In walkDirstStop return $dist ");
 
             return $dist;
         }
         else {
+		  
             $dist += $step;
-
+			debug(99,"In walkDirstStop call walkFirstStop recurively $check + $step ");
+			
             $ok = walkFirstStop( ( $check + $step ),
-                $ref_sequence, $dist, $ok, $step )
+								 $ref_sequence, $dist, $ok, $step )
 
         }
     }
@@ -1046,8 +1106,11 @@ sub shiftStructureLast {
     ## change the last digit of the last exon
     if ( $$ref_structure{pos}[ ( $amountExon - 1 ) ] =~ /(\d+)\.\.(\d+)/ ) {
         if ( $1 < ( $2 + $shift ) ) {
-            $$ref_structure{pos}[ ( $amountExon - 1 ) ] =~
-              s/(\d+)$/($1+$shift)/e;
+		  my $sum=($2+$shift);
+		
+		  $$ref_structure{pos}[ ( $amountExon - 1 ) ] = "$1..$sum";
+		  
+#              s/(\d+)$/($1+$shift)/e;
         }
     }
     elsif ( $$ref_structure{pos}[ ( $amountExon - 1 ) ] =~ /(\d+)/ ) {
@@ -1339,14 +1402,37 @@ sub buildGene {
     my $geneSeq;
 
     foreach (@$ref_ar) {
-        if (/^(\d+)\.\.(\d+)$/) {
+	  
+	  if (/^(\d+)\.\.(\d+)$/) {
             ### if a gene model got shiftet, the last exon might be gone, so it should be rebuild
-            if ( $2 > $1 ) {
-                $geneSeq .= substr( $sequence, ( $1 - 1 ), ( $2 - $1 + 1 ) );
+		  my $s=$1;
+		  my $e=$2;
+
+		  if ($s<1) {
+			$s=1
+		  }
+		  if ($s>length($sequence)) {
+			$s=length($sequence)
+		  }
+		  if ($e<1) {
+			$e=1
+		  }
+		  if ($e>length($sequence)) {
+			$e=length($sequence)
+		  }
+		  if ( $e > $s ) {
+                $geneSeq .= substr( $sequence, ( $s - 1 ), ( $e - $s + 1 ) );
             }
         }
         elsif (/^(\d+)$/) {
-            $geneSeq .= substr( $sequence, ( $1 - 1 ), 1 );
+		  my $s=$1;
+		  	  if ($s<1) {
+			$s=1
+		  }
+		  if ($s>length($sequence)) {
+			$s=length($sequence)
+		  } 
+		  $geneSeq .= substr( $sequence, ( $s - 1 ), 1 );
         }
         else {
 			print Dumper $ref_ar;
@@ -1566,13 +1652,12 @@ sub amountWrongspliceDonors {
     my $count     = 1;
     my $wrong     = 0;
     my $lastwrong = 0;
-
+	
     foreach ( @{ $$ref_structure{pos} } ) {
         if ( $count != scalar(@{ $$ref_structure{pos} } )) {
             /(\d+)$/;
             if ( !defined( $SPLICE_DONOR{ uc( substr( $sequence, $1, 2 ) ) } ) )
             {
-            	
                 $wrong++;
                 $lastwrong = $1;
 
@@ -1586,8 +1671,8 @@ sub amountWrongspliceDonors {
                 )
               )
             {
-                $wrong++;
-                $lastwrong = $1;
+			  $wrong++;
+			  $lastwrong = $1;
             }
         }
         $count++;
@@ -1648,6 +1733,11 @@ sub loadConfig {
 
 		print "Using the $ENV{RATT_CONFIG} file for specifications.\n";
 		
+		undef %STOP_CODON;
+		undef %START_CODON;
+		undef %SPLICE_DONOR;
+		undef %SPLICE_ACCEPTOR;
+		
 		
         my $count = 0;
         while (<F>) {
@@ -1678,11 +1768,11 @@ sub loadConfig {
 				
             }
             elsif ( $count == 3 ) {
-                /(\d+)\.\.(\d+)/;
-				print "Splice Site: $_\n";
+                /(\w+)\.\.(\w+)/;
+				print "Splice Site: $1 - $2 \n";
 
-                $SPLICE_DONOR{$_}    = 1;
-                $SPLICE_ACCEPTOR{$_} = 1;
+                $SPLICE_DONOR{$1}    = 1;
+                $SPLICE_ACCEPTOR{$2} = 1;
             }
             elsif ( $count == 4 ) {
             	chomp;
@@ -1697,8 +1787,14 @@ sub loadConfig {
 			  print "Correct Pseudo Genes: $_\n";
 			  
 			}
-        }
-    }
+		  }
+		
+		foreach (keys %STOP_CODON) {
+		  print "Stop is $_\n";
+		  
+		}
+	  }
+	
 	else {
 	  print "Using the default specifications for start/codons and splice sites.\n";
 
