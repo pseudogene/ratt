@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <01-Sep-2010 08:23:59 tdo>
+# Time-stamp: <02-Sep-2010 10:31:35 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -711,8 +711,9 @@ sub doTransfer{
 		$ar[$i] =~ /(\d+)\.\.(\d+)/;
 		my $posA=$1;
 		my $posE=$2;
-		my $half=int ($posE-$posA);
-		
+		my $half=int (($posE+$posA)/2);
+		my $length_halfRef= int (($posE-$posA)/2);
+
 		if (defined($$ref_shift{$chr}[$posA][0]) &&
 			defined($$ref_shift{$chr}[$posE][0]) &&
 			$$ref_shift{$chr}[$posE][0] eq $$ref_shift{$chr}[$posA][0] &&
@@ -732,7 +733,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+299)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+299)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+299)][1];
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -747,7 +748,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+74)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+74)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+74)][1];
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -761,7 +762,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+14)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+14)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".$$ref_shift{$chr}[($posA+14)][1];
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -777,7 +778,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-299)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-299)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = $$ref_shift{$chr}[($posE-299)][1]."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -792,7 +793,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-74)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-74)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = $$ref_shift{$chr}[($posE-74)][1]."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -807,7 +808,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-14)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-14)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = $$ref_shift{$chr}[($posE-14)][1]."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -820,17 +821,21 @@ sub doTransfer{
 		elsif (defined($$ref_shift{$chr}[$half][0]) 
 		
 		   ) {
-		  my $start=($$ref_shift{$chr}[$half][1]-$half);
+		  
+		  my $start=($$ref_shift{$chr}[$half][1]-$length_halfRef);
 		  if ($start<1) {
 			$start=1;
 		  }
-		  my $end=($$ref_shift{$chr}[$half][1]+$half-15);
+		  my $end=($$ref_shift{$chr}[$half][1]+$length_halfRef);
 		  $ar[$i] = $start."..".$end;
-		  $mappedOnce++;
+
+#		  print " transfer $posA $posE no sim, but $half\n";
+#		  print "Place it to $start $end\n"; 
+		  $mappedOnce++; 
 		  $partialCount++;
 
 		  
-		  $oldQuery=$$ref_shift{$chr}[$posE][0];
+		  $oldQuery=$$ref_shift{$chr}[$half][0];
 		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
 		  $ResultLine{$oldQuery."::".$chr}[1] = $end;
 		  
@@ -943,6 +948,10 @@ sub doTransfer{
 	  if ($trans ne '0'){
 		
 		my ($chrqryLocal,$chrpart) = $trans =~ /^(\S+)::(\S+)$/;
+		if (!defined($chrqryLocal) || !defined($chrpart)) {
+		  	print Dumper %ResultLine;
+
+		}
 		$targetChr{$chrqryLocal}=1;
 		
 		my $pos =$ResultLine{$trans}[1];

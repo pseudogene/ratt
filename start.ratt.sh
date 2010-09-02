@@ -57,7 +57,6 @@ embl-annotation files     - This directory contains all the embl files that shou
    exit
  fi
 
-orig_query=$query
 if [ ! -z "$RATT_VERBOSE" ]
 	then
 	verbose=1;
@@ -154,6 +153,8 @@ then
    exit; 
 fi
 
+tmp=$$;
+
 # check for the query
 if [ ! -f "$query" ]                # be sure the directory /mnt exists
   then
@@ -161,6 +162,10 @@ if [ ! -f "$query" ]                # be sure the directory /mnt exists
 	exit
 fi
 
+# get weird character aways
+sed 's/|/_/g' $query > query.$tmp
+query=query.$tmp
+orig_query=$query
 
 # check for the reference
 if [ -f "$ref" ] 
@@ -173,7 +178,6 @@ if [ -f "$ref" ]
 	echo
 	echo
 else
-	tmp=$$;
 	ref="Reference.$tmp.fasta"
 	perl $RATT_HOME/main.ratt.pl Embl2Fasta $refembl $ref
 fi
@@ -247,8 +251,8 @@ elif [ "$parameterSet" == "Strain" ] ||  [ "$parameterSet" == "Strain.Repetitive
 		other_nucmer="  "
 	fi
 	
-	rearrange=" -g -o 1 ";
-	minInd=95;
+	rearrange=" -r -o 1 ";
+	minInd=90;
 	
 	### get real SNP before mutate
 	doNucmer
@@ -280,7 +284,7 @@ elif [ "$parameterSet" == "Strain.global" ] ||  [ "$parameterSet" == "Strain.glo
 		other_nucmer="  "
 	fi
 	
-	rearrange=" -g ";
+	rearrange=" -g -o 1 ";
 	minInd=95;
 	
 	### get real SNP before mutate
@@ -313,7 +317,7 @@ elif [ "$parameterSet" == "Species" ]  || [ "$parameterSet" == "Species.Repetiti
 	l=10;
 	g=500;
  
-	rearrange="-g  -o 1";
+	rearrange=" -r  -o 1";
 	minInd=40;
 elif [ "$parameterSet" == "Species.global" ]  || [ "$parameterSet" == "Species.global.Repetitive" ] ;
 	then 
