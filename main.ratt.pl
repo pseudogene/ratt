@@ -1,7 +1,7 @@
 #! /usr/bin/perl -w
 #
 # File: annotation.correctString.pl
-# Time-stamp: <02-Sep-2010 10:31:35 tdo>
+# Time-stamp: <08-Oct-2010 14:39:38 tdo>
 # $Id: $
 #
 # Copyright (C) 2010 by Pathogene Group, Sanger Center
@@ -105,7 +105,7 @@ elsif ($ARGV[0] eq "EMBLFormatCheck") {
   my $fasta = shift;
   my $resultName = shift;
   
-  correctEMBL($embl,"tmp.BBA.embl");
+  correctEMBL($embl,"tmp.BBA.embl",$fasta);
 }
 elsif ($ARGV[0] eq "Correct") {
   if (scalar(@ARGV) < 4) {
@@ -119,7 +119,7 @@ elsif ($ARGV[0] eq "Correct") {
   my $fasta = shift;
   my $resultName = shift;
   
-  correctEMBL($embl,"tmp.BBA.embl");
+  correctEMBL($embl,"tmp.BBA.embl",$fasta);
   
   startAnnotationCorrection( "$embl.tmp.BBA.embl",$fasta,$resultName);
   
@@ -137,7 +137,7 @@ elsif ($ARGV[0] eq "Check") {
   my $embl=shift;
   my $fasta = shift;
   my $resultName = shift;	
-  correctEMBL($embl,"tmp.BBA.embl");
+  correctEMBL($embl,"tmp.BBA.embl",$fasta);
   
   startAnnotationCheck( "$embl.tmp.BBA.embl",$fasta,$resultName);
   exit;
@@ -158,22 +158,7 @@ elsif ($ARGV[0] eq "Embl2Fasta") {
   
 }
 
-elsif ($ARGV[0] eq "EMBLFormatCheck") {
-  if (scalar(@ARGV) < 3) {
-	print "\n\nusage:  \$RATT_HOME/main.ratt.pl EMBLFormatCheck <EMBL file> <ResultName postfix>\n\n".
-	  "Some EMBL files have feature positions spanning several lines, this function consolidates these features so they appear on one line. The result name is <EMBL File>.<ResultName postfix>.\n\n";
-	
- 	exit(1); 
-  }
-  
-  my $what =shift;
-  my $embl=shift;
-  my $postfix = shift;
-  
-  correctEMBL($embl,$postfix);
-   
-  exit;
-}
+
 elsif ($ARGV[0] eq "Transfer") {
   
   if (@ARGV< 5) {
@@ -194,54 +179,59 @@ elsif ($ARGV[0] eq "Transfer") {
   my $dbg=49;
   
 
-## main hash: %ref_shift{Ref_contig}[pos] [0] query_contig
-#										  [1] position
-#										  [2] strand
-my $ref_shift;
+  ## main hash: %ref_shift{Ref_contig}[pos] [0] query_contig
+  #										  [1] position
+  #										  [2] strand
+  my $ref_shift;
   
-
-#load the position of the 
-my $ref_cdsPosition=loadEmbl($emblDir);
-
-
-
-
+  
+  #load the position of the 
+  my $ref_cdsPosition=loadEmbl($emblDir);
+  
+  
+  my $ref_snp    = getFile($mummerSNP);
+  my $ref_coords = getFile($mummerCoords);
+  
   # clean the space of the annotation position
-
-
-# transfer the annotation the annotation
-opendir (DIR, $emblDir) or die "Problem to open opendir $emblDir: $!\n";
-
-### will hold the new annotation: $h{queryname}.=annotation as embl
-my $ref_results;
-my $ref_Counting= {'Partial'         => 0,
-				   'ExonNotTransfered' => 0,
-				   'Split'         => 0,
-				   'NotTransfered' => 0,
-				   'Transfered'    => 0,
-				   'CDS' => 0,
-				   'CDSTransfered' => 0,
-				   'CDSNotExons'   => 0,
-				   'CDSPartial'   => 0
-				  };
-
-map {
+  
+  
+  # transfer the annotation the annotation
+  opendir (DIR, $emblDir) or die "Problem to open opendir $emblDir: $!\n";
+  
+  ### will hold the new annotation: $h{queryname}.=annotation as embl
+  my $ref_results;
+  my $ref_Counting= {'Partial'         => 0,
+					 'ExonNotTransfered' => 0,
+					 'Split'         => 0,
+					 'NotTransfered' => 0,
+					 'Transfered'    => 0,
+					 'CDS' => 0,
+					 'CDSTransfered' => 0,
+					 'CDSNotExons'   => 0,
+					 'CDSPartial'   => 0
+					};
+  
+  map {
 	if (/(\S+)\.embl$/){
 	  my $refName=$1;
 	  my $ref_shift;
+	  print "working on $refName\n";
 	  
 	  # fill the shift hash with the coords 
-	  $ref_shift = loadCoords($mummerCoords,$ref_shift,$refName);
+	  $ref_shift = loadCoords($ref_coords,$ref_shift,$refName);
 	  	  #print Dumper $ref_shift;
 	  # tune the shift hash with the snp file
-	  my $ref_shift2 = loadSNP($mummerSNP,$ref_shift,$ref_cdsPosition,$refName);
+	  my $ref_shift2 = loadSNP($ref_snp,$ref_shift,$ref_cdsPosition,$refName);
 	  
 	  ($ref_results,$ref_Counting)=adaptAnnotationEMBL($emblDir,$_,$ref_shift2,$ref_results,$ref_Counting);
-
+	  
 	  ### cleaning step
-	  foreach (0..(scalar(@{$$ref_shift{$refName}}))-1) {
-		undef(@{ $$ref_shift{$refName}[$_]});
+	  if (defined(@{$$ref_shift{$refName}})) {
+		foreach (0..(scalar(@{$$ref_shift{$refName}}))-1) {
+		  undef(@{ $$ref_shift{$refName}[$_]});
+		}
 	  }
+	  
 	  undef %$ref_shift;
 	  
 	
@@ -283,6 +273,13 @@ else {
 ###########################################
 ### subs
 
+sub getFile{
+  my $file = shift;
+  open F, $file or die "Problem to open $file: $!\n";
+  my @ar=<F>;
+  close(F);
+  return \@ar;
+}
 
 ############################################
 ### doEMBL
@@ -711,9 +708,9 @@ sub doTransfer{
 		$ar[$i] =~ /(\d+)\.\.(\d+)/;
 		my $posA=$1;
 		my $posE=$2;
-		my $half=int (($posE+$posA)/2);
-		my $length_halfRef= int (($posE-$posA)/2);
-
+		my $geneLength=int ($posE-$posA);
+		my $half=int ($geneLength/2);
+		
 		if (defined($$ref_shift{$chr}[$posA][0]) &&
 			defined($$ref_shift{$chr}[$posE][0]) &&
 			$$ref_shift{$chr}[$posE][0] eq $$ref_shift{$chr}[$posA][0] &&
@@ -733,7 +730,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+299)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+299)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+$geneLength);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -748,7 +745,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+74)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+74)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+$geneLength);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -762,7 +759,7 @@ sub doTransfer{
 			   $$ref_shift{$chr}[($posA+14)][0] eq $$ref_shift{$chr}[$posA][0]
 			   && abs($$ref_shift{$chr}[($posA+14)][1] - $$ref_shift{$chr}[$posA][1])< 20000
 			  ) {
-		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+2*$length_halfRef);
+		  $ar[$i] = $$ref_shift{$chr}[$posA][1]."..".($$ref_shift{$chr}[($posA)][1]+$geneLength);
 		  $mappedOnce++;
 		  $partialCount++;
 		  
@@ -778,7 +775,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-299)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-299)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-$geneLength)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -793,7 +790,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-74)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-74)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-$geneLength)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -808,7 +805,7 @@ sub doTransfer{
 			$$ref_shift{$chr}[($posE-14)][0] eq $$ref_shift{$chr}[$posE][0] &&
 			abs($$ref_shift{$chr}[($posE-14)][1] - $$ref_shift{$chr}[$posE][1])< 20000
 		   ) {
-		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-2*$length_halfRef)."..".$$ref_shift{$chr}[($posE)][1];
+		  $ar[$i] = ($$ref_shift{$chr}[($posE)][1]-$geneLength)."..".$$ref_shift{$chr}[($posE)][1];
 		  $mappedOnce++;
 		  $partialCount++;
 
@@ -818,24 +815,23 @@ sub doTransfer{
 		  $ResultLine{$oldQuery."::".$chr}[1] = $posE;
 		  
 		}
-		elsif (defined($$ref_shift{$chr}[$half][0]) 
+		elsif (defined($$ref_shift{$chr}[($posA+$half)][0]) 
 		
 		   ) {
-		  
-		  my $start=($$ref_shift{$chr}[$half][1]-$length_halfRef);
+		  my $start=($$ref_shift{$chr}[($posA+$half)][1]-$half);
 		  if ($start<1) {
 			$start=1;
 		  }
-		  my $end=($$ref_shift{$chr}[$half][1]+$length_halfRef);
+		  my $end=($$ref_shift{$chr}[($posA+$half)][1]+$half);
 		  $ar[$i] = $start."..".$end;
-
-#		  print " transfer $posA $posE no sim, but $half\n";
-#		  print "Place it to $start $end\n"; 
-		  $mappedOnce++; 
+		  print
+		   "$start $end $half ".$$ref_shift{$chr}[($posA+$half)][1]." \n";
+		  
+		  $mappedOnce++;
 		  $partialCount++;
 
 		  
-		  $oldQuery=$$ref_shift{$chr}[$half][0];
+		  $oldQuery=$$ref_shift{$chr}[($posA+$half)][0];
 		  $ResultLine{$oldQuery."::".$chr}[0] .= "$ar[$i],";
 		  $ResultLine{$oldQuery."::".$chr}[1] = $end;
 		  
@@ -948,10 +944,6 @@ sub doTransfer{
 	  if ($trans ne '0'){
 		
 		my ($chrqryLocal,$chrpart) = $trans =~ /^(\S+)::(\S+)$/;
-		if (!defined($chrqryLocal) || !defined($chrpart)) {
-		  	print Dumper %ResultLine;
-
-		}
 		$targetChr{$chrqryLocal}=1;
 		
 		my $pos =$ResultLine{$trans}[1];
@@ -1059,7 +1051,7 @@ sub saveGFF{
   my ($name,$path,$ref_h) = @_;
 
   if (! -d "$path") {
-	!system("mkdir $path") or die "Couldn't create directory $path.\n";
+	!system("mkdir $path") or warn "Couldn't create directory $path.\n";
   }
 
   foreach my $chr (sort keys %$ref_h){
@@ -1078,32 +1070,26 @@ sub saveGFF{
 ### loadSNP
 ############################################
 sub loadSNP{
-  my $fileName        = shift;
+  my $ref_File        = shift;
   my $ref_shift       = shift;
   my $ref_cdsPosition = shift;
   my $refName  = shift;
 
-  
-  open (F, $fileName) or die "Problem to open SNP File: $fileName \n";
-  
-  my @File=<F>;
-  close(F);
-
   my $lastQry="";
   
   ## walk through the list. The last 
-  for my $pos (0..(scalar(@File)-2)) {
+  for my $pos (0..(scalar(@$ref_File)-2)) {
 
 	# get the positions of the snp'indels of before and last
 	my @previous;
 	if ($pos >0) {
-	  @previous = split(/\s+/,$File[($pos-1)]);
+	  @previous = split(/\s+/,$$ref_File[($pos-1)]);
 	}
-	my ($refPos,$refWhat,$queryWhat,$queryPos,$dum1,$dum2,$dum3,$dum4,$refStrand,$queryStrand,$reference,$query) = split(/\s+/,$File[$pos]);
+	my ($refPos,$refWhat,$queryWhat,$queryPos,$dum1,$dum2,$dum3,$dum4,$refStrand,$queryStrand,$reference,$query) = split(/\s+/,$$ref_File[$pos]);
 	
 	if (!(defined($refName)) || $refName eq $reference) {
 	  
-	  my @next = split(/\s+/,$File[($pos+1)]);
+	  my @next = split(/\s+/,$$ref_File[($pos+1)]);
 	  
 	  my ($refNextPos,$queryNextPos,$refNext,$queryNext) 
 		= ($next[0],$next[3],$next[10],$next[11]);
@@ -1155,7 +1141,7 @@ sub loadSNP{
   my ($refPos,$refWhat,$queryWhat,$queryPos,
 	  $dum1,$dum2,$refStrand,$queryStrand,
 	  $reference,$query)
-	= split(/\s+/,$File[(scalar(@File)-1)]);
+	= split(/\s+/,$$ref_File[(scalar(@$ref_File)-1)]);
 
   $ref_shift=walkToEnd($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand);
   return $ref_shift;	
@@ -1163,7 +1149,7 @@ sub loadSNP{
 
 sub walkToEnd{
   my ($ref_shift,$reference,$refPos,$query,$queryPos,$queryStrand) = @_;
-  while (defined($$ref_shift{$reference}[$refPos])) {
+  while (0 && defined($$ref_shift{$reference}[$refPos])) {
 	$$ref_shift{$reference}[$refPos][1]=$queryPos;
 	$queryPos+=$queryStrand;
 #	print "$refPos -3-> $queryPos\n";
@@ -1180,17 +1166,14 @@ sub walkToEnd{
 ############################################
 
 sub loadCoords{
-  my $fileName = shift;
+  my $ref_File = shift;
   my $ref_h    = shift;
   my $refName  = shift;
   
   
-  open (F, $fileName) or die "Problem to open coords File: $fileName \n";
-  
-  my @File=<F>;
   
   ### position of blocks
- foreach (@File) {
+ foreach (@$ref_File) {
 	# 1       115285  837     116121  115285  115285  99.99   5.36    5.31    Neo_chrII       Neo_chrII
 
 	my ($refPos1,$refPos2,$queryPos1,$queryPos2,$overlap1,$overlap2,$identity,$dum1,$dum2,$refLength,$queryLength,$reference,$query) = split(/\s+/);
@@ -1242,7 +1225,7 @@ sub putMutation{
   open (F,$file) or die "Please provide a valid query sequence\n";
 
   if (!defined($MUTATION_RATE)) {
-    $MUTATION_RATE=496;
+    $MUTATION_RATE=300;
   }
   
   my %h;

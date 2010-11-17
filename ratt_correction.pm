@@ -1828,8 +1828,63 @@ sub loadSequence {
     }
     return $seq;
 }
-
+#####################
+### getFastaLengthOneSeq
 ####################
+sub getFastaLengthOneSeq {
+    my $file = shift;
+
+	my $amount=0;
+	my $seqLength=0;
+	
+	  
+    open( F, $file )
+      or die "Couldn't open Sequence file $file: $!\n";
+
+    while (<F>) {
+	  if (/^>(\S+)/) {
+		$amount++;
+		
+	  }
+	  else {
+		chomp;
+		$seqLength += length($_);
+        }
+	}
+	if ( $amount > 1 ) {
+	  die
+		"Please do not enter a multifasta file, in $file --  but just the sequence file for the used replicon.\n";
+    }
+    return $seqLength;
+  }
+
+
+
+#####################
+### getFastaLength
+####################
+sub getFastaLength {
+    my $file = shift;
+
+    my %h;
+	my $name;
+	
+    open( F, $file )
+      or die "Couldn't open Sequence file $file: $!\n";
+
+    while (<F>) {
+        if (/^>(\S+)/) {
+            $name=$1;
+        }
+        else {
+            chomp;
+            $h{$name} += length($_);
+        }
+    }
+    return \%h;
+}
+
+###################
 ### revSeq
 ####################
 sub revcomp {
@@ -1929,13 +1984,19 @@ sub reverseGFF {
 
 }
 
-
 ### new: numbers must be ordered and not negative...
 sub correctEMBL {
     my $embl    = shift;
     my $postfix = shift;
-	
+	my $fastaFile = shift;	
 
+#	my $ref_SeqLength=getFastaLength($fastaFile);
+	my $seqLength=getFastaLengthOneSeq($fastaFile);
+
+	if ($seqLength <1) {
+	  die "Problems with fasta sequence...\nProbably empty...\n";
+	}
+	
     my $res;
     open( F, $embl ) or die "Couldn't open EMBL file $embl.\n";
 
@@ -1944,7 +2005,9 @@ sub correctEMBL {
     my $getNext = 0;
 
 	my $restmp;
-	
+
+#	print "Max length is $seqLength\n";
+
     while (<F>) {
         chomp;
         if (/^FT   \S+\s+(\S+,)$/) {
@@ -1964,15 +2027,15 @@ sub correctEMBL {
                 /^FT\s+(.*)$/;
                 $getNext = 0;
                 $restmp .= $1 . "\n";
-				$res.=checkFeaturePos($restmp);
+				$res.=checkFeaturePos($restmp,$seqLength);
 			  }
         }
 		elsif (/^FT   \S+\s+(\S+)/) {
-		  $res.=checkFeaturePos($_);
+		  $res.=checkFeaturePos($_,$seqLength);
 		}
         else {
             $res .= $_ . "\n";
-        }
+		  }
     }
     open( F, "> $embl.$postfix" )
       or die "Couldn't write EMBL file $embl.$postfix\n";
@@ -1982,6 +2045,8 @@ sub correctEMBL {
 
 sub checkFeaturePos{
   my $str = shift;
+  my $seqLength = shift;
+  
   
   my ($pre,$coords,$pos) = $str =~ /^(FT   \S+\s+\D*)(\d+.*\d+)(\)*)/;
 
@@ -1993,20 +2058,40 @@ sub checkFeaturePos{
 
   my $newPos=10;
   my $count=0;
+  my $lastPos=($seqLength);
+  
+#  print Dumper @coor;
+  
+  my @sorted = sort { $a =~ /^(\d+)\./ <=> $b =~ /^(\d+)\./} @coor;
 
-
+#  print Dumper @sorted;
+  
   
   foreach (@coor) {
 	
-	if (/^(\d+)\.\.(\d+)$/) {
+	if (/^(-*\d+)\.\.(-*\d+)$/) {
 	  $a1=$1;
 	  $b1=$2;
+#	  print ("$a1  $b1\n");
+	  
 	  if ($a1<1) {
-		$a1=$newPos;
+		if ($b1<10) {
+		  $a1=$newPos;
+		}
+		else {
+		  $a1=($b1-9)
+		}
 		$newPos+=$newPos
 	  }
+	  if ($a1>$seqLength) {
+		
+		$a1=($seqLength-3)
+	  }
+	  if ($b1>$seqLength) {
+		$b1=$seqLength
+	  }
 	  if ($b1<1) {
-		$b1=$newPos;
+		$b1=($a1+9);
 		$newPos+=$newPos
 	  }
 	  
@@ -2019,6 +2104,9 @@ sub checkFeaturePos{
 	}
 	elsif (/^(\d+)$/) {
 	  $a1=$1;
+	  if ($a1>$seqLength) {
+		$a1=($seqLength-3)
+	  }
 	  if ($a1<1) {
 		$a1=$newPos;
 		$newPos+=$newPos
@@ -2031,11 +2119,12 @@ sub checkFeaturePos{
   }
 
   $coords="";
+  
   foreach my $pos (sort {$a <=> $b} keys %tmp) {
 	$coords.=$tmp{$pos}.","
   }
   $coords =~ s/,$//g;
-
+  
   my %tmp2;
   
   #check if overlapping!
@@ -2089,15 +2178,31 @@ sub checkFeaturePos{
 	$coords.=$tmp2{$pos}.","
   }
   $coords =~ s/,$//g;
+#  print "--> $coords \n";
+  
 
+ 
+  my $returnit;
+
+  ### the pre might have the minus in...
+  $pre =~ s/-$//g;
+  
   if ($count >= 2 && (!($pre =~ /join/)) ) {
-	return $pre."join(".$coords.")".$pos."\n";
+	$returnit=$pre."join(".$coords.")".$pos."\n";
+#	return $pre."join(".$coords.")".$pos."\n";
   }
   else {
-	return $pre.$coords.$pos."\n";
+	$returnit= $pre.$coords.$pos."\n";
+#	return $pre.$coords.$pos."\n";
   }
+#  print ("I return $returnit\n");
+  
+  return $returnit;
   
 }
+
+
+
 sub debug {
     my $val = shift;
 

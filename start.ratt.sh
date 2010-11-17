@@ -140,7 +140,7 @@ fi
 
 ### check path of nucmer and the perl transferprogram
 NUCMER_EXE=${NUCMER_EXE-`which nucmer 2>/dev/null`}
-EMBL_files=${EMBL_files-`ls $refembl* 2>/dev/null`}
+EMBL_files=${EMBL_files-`ls $refembl/ | wc 2>/dev/null`}
 #PERL_SCRIPT=${NUCMER_EXE-`which samtools 2>/dev/null`}
 if (test "$NUCMER_EXE" == "");
 then
@@ -219,7 +219,7 @@ if [ "$parameterSet" == "Assembly" ] || [ "$parameterSet" == "Assembly.Repetitiv
 		other_nucmer="  "
 	fi
 	rearrange=" -g -o 1 ";
-	minInd=99;
+	minInd=98;
 	
 	### get real SNP before mutate
 	doNucmer
@@ -255,21 +255,21 @@ elif [ "$parameterSet" == "Strain" ] ||  [ "$parameterSet" == "Strain.Repetitive
 	minInd=90;
 	
 	### get real SNP before mutate
-	doNucmer
+#	doNucmer
 
-	perl $RATT_HOME/main.ratt.pl Difference  $name.snp $name.filter.coords $result
-	doneDifference=1;
+#	perl $RATT_HOME/main.ratt.pl Difference  $name.snp $name.filter.coords $result
+	doneDifference=0;
 
 	### insert of mutation to have better anchors
-	perl $RATT_HOME/main.ratt.pl Mutate $query
-	return=$?
-	if [ "$return" != "0" ] ;
-		then 
-		echo "See Error in BBA.main script, to mutate the query for Assembly to Assembly annotation transfer."
-		exit 1;
-	fi;
+#	perl $RATT_HOME/main.ratt.pl Mutate $query
+#	return=$?
+#	if [ "$return" != "0" ] ;
+#		then 
+#		echo "See Error in BBA.main script, to mutate the query for Assembly to Assembly annotation transfer."
+#		exit 1;
+#	fi;
 	### update name of query
-	query=$query."mutated"
+#	query=$query."mutated"
 
 elif [ "$parameterSet" == "Strain.global" ] ||  [ "$parameterSet" == "Strain.global.Repetitive" ] ;
 	then 
@@ -303,6 +303,38 @@ elif [ "$parameterSet" == "Strain.global" ] ||  [ "$parameterSet" == "Strain.glo
 	fi;
 	### update name of query
 	query=$query."mutated"
+elif [ "$parameterSet" == "Strain.reference" ] ||  [ "$parameterSet" == "Strain.reference.Repetitive" ] ;
+	then 
+	c=400;
+	l=20;
+	g=500;
+
+	if [ "$parameterSet" == "Strain.Repetitive" ] ;
+		then
+		other_nucmer=" --maxmatch "
+	else
+		other_nucmer="  "
+	fi
+	
+	rearrange=" -r -o 1 ";
+	minInd=95;
+	
+	### get real SNP before mutate
+#	doNucmer
+
+#	perl $RATT_HOME/main.ratt.pl Difference  $name.snp $name.filter.coords $result
+	doneDifference=0;
+
+	### insert of mutation to have better anchors
+#	perl $RATT_HOME/main.ratt.pl Mutate $query
+#	return=0#$?
+#	if [ "$return" != "0" ] ;
+#		then 
+#		echo "See Error in BBA.main script, to mutate the query for Assembly to Assembly annotation transfer."
+#		exit 1;
+#	fi;
+	### update name of query
+#	query=$query."mutated"
 
 elif [ "$parameterSet" == "Species" ]  || [ "$parameterSet" == "Species.Repetitive" ] ;
 	then 
@@ -408,5 +440,5 @@ for nameRes in `grep '>' $query | perl -nle 's/\|/_/g;/>(\S+)/; print $1'` ; do
 
 done
 
-rm $result*embl.tmp.BBA.embl $result.$nameRes.tmp2.embl
+rm $result*embl.tmp.BBA.embl # $result.$nameRes.tmp2.embl
 
