@@ -764,22 +764,22 @@ sub correctStart {
 ### copyStructure
 ####################
 sub copyStructure {
-    my $ref_structure = shift;
-
-    my %new;
-
-    foreach my $key ( keys %$ref_structure ) {
-        if ( defined( @{ $$ref_structure{$key} } ) ) {
-            foreach my $val ( @{ $$ref_structure{$key} } ) {
-                push @{ $new{$key} }, $val;
-            }
-        }
-        else {
-            $new{$key} = $$ref_structure{$key};
-        }
-    }
-
-    return \%new;
+  my $ref_structure = shift;
+  
+  my %new;
+  
+  foreach my $key ( keys %$ref_structure ) {
+	if (ref($$ref_structure{$key}) eq 'ARRAY') {
+	  foreach my $val ( @{ $$ref_structure{$key} } ) {
+		push @{ $new{$key} }, $val;
+	  }
+	}
+	else {
+	  $new{$key} = $$ref_structure{$key};
+	}
+  }
+  
+  return \%new;
 }
 
 ####################
