@@ -502,6 +502,9 @@ sub correctModel {
 			
 		  }
 		} ### is pseudo
+		else {
+			$res .= $_ . "\n";
+		}
 		
 	  }    # enf if
 	  else {

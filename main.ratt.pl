@@ -655,7 +655,6 @@ sub doTransfer{
 	# the zero will hold the no puttable
 	my %ResultLine;
 
-	
 	### put complement to it, or get rid of it,
 	### also will need to reorder the numbers
 	my $wasComplement=0;
@@ -889,7 +888,7 @@ sub doTransfer{
 	  
 	  
 	}
-
+#	print Dumper @ar;
 	## default do not transfer
 	my $transfer=0;
 	#### check the amount
@@ -1515,7 +1514,7 @@ sub addTranslation
   my($embl_file, $translationTable) = @_;
   my %seqs = ();
   
-  use Bio::SeqIO;
+  require Bio::SeqIO;
   if ((!defined($translationTable))) {
 	$translationTable=1
   }
